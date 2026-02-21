@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<title>Траектория — AI-квест</title>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Russo+One&display=swap" rel="stylesheet"/>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body,#root{width:100%;min-height:100vh;background:#0f0f19;color:#e2e8f0;font-family:'Nunito',-apple-system,sans-serif;overflow-x:hidden;-webkit-tap-highlight-color:transparent}
+.hero-title{font-family:'Russo One','Impact','Arial Black',sans-serif!important}
+.cta-pulse{animation:ctaPulse 2.5s ease-in-out infinite}
+@keyframes ctaPulse{0%,100%{transform:scale(1) translateY(0);box-shadow:0 4px 28px rgba(6,182,212,0.35)}25%{transform:scale(1.04) translateY(-3px);box-shadow:0 10px 40px rgba(6,182,212,0.5)}50%{transform:scale(1) translateY(0);box-shadow:0 4px 28px rgba(6,182,212,0.35)}75%{transform:scale(1.02) translateY(-1px);box-shadow:0 6px 32px rgba(6,182,212,0.42)}}
+@keyframes fadeSlideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+@keyframes marquee-left{0%{transform:translateX(0)}100%{transform:translateX(-33.33%)}}
+@keyframes marquee-right{0%{transform:translateX(-33.33%)}100%{transform:translateX(0)}}
+@keyframes dotPulse{0%,80%,100%{opacity:0.3}40%{opacity:1}}
+@keyframes destPulse{0%,100%{opacity:0.08;transform:scale(1)}50%{opacity:0.2;transform:scale(1.3)}}
+@keyframes pathFloat{0%,100%{opacity:0.12}50%{opacity:0.22}}
+@keyframes micPulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0.4)}50%{box-shadow:0 0 0 10px rgba(239,68,68,0)}}
+@keyframes dnaGlow{0%,100%{box-shadow:0 0 8px rgba(6,182,212,0.2)}50%{box-shadow:0 0 16px rgba(6,182,212,0.4)}}
+@keyframes dnaBump{0%{transform:scale(1)}50%{transform:scale(1.05)}100%{transform:scale(1)}}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:rgba(6,182,212,0.2);border-radius:2px}
+.typing-dot{animation:dotPulse 1.4s ease-in-out infinite;display:inline-block;width:8px;height:8px;border-radius:50%;background:#06b6d4;margin:0 2px}
+.typing-dot:nth-child(2){animation-delay:0.2s}
+.typing-dot:nth-child(3){animation-delay:0.4s}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+
+<script type="text/babel">
+const {useState,useEffect,useRef,useCallback}=React;
+
+const SB_URL='https://icrqtyuiuoescihjvnma.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImljcnF0eXVpdW9lc2NpaGp2bm1hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEyNjkwNTYsImV4cCI6MjA4Njg0NTA1Nn0.QNPJriOjokaFNAc8-2oJ7sq0jlHLGcV1R3OHWty8Kjs';
+const HDRS={'Content-Type':'application/json','apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`};
+
+async function sbPost(table,body){try{const r=await fetch(`${SB_URL}/rest/v1/${table}`,{method:'POST',headers:{...HDRS,'Prefer':'return=representation'},body:JSON.stringify(body)});if(!r.ok)return null;const d=await r.json();return d[0]||null}catch(e){return null}}
+async function sbPatch(table,id,body){try{await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`,{method:'PATCH',headers:HDRS,body:JSON.stringify(body)})}catch(e){}}
+async function sbRpc(fn,args){const r=await fetch(`${SB_URL}/rest/v1/rpc/${fn}`,{method:'POST',headers:HDRS,body:JSON.stringify(args)});if(!r.ok){const t=await r.text();throw new Error(t.substring(0,300))}return await r.json()}
+
+// ═══════ SYSTEM PROMPT v6 ═══════
+const SYS=(un,cn,tone,msgCount,skipCount)=>`
+═══ КРИТИЧЕСКИ ВАЖНО: JSON В КОНЦЕ КАЖДОГО СООБЩЕНИЯ ═══
+Ты ОБЯЗАН закончить КАЖДОЕ своё сообщение блоком:
+\`\`\`json_dna
+{"dna_percent":N,"phase":"ФАЗА","emotion":"STATE","traits":["trait1","trait2"],"clusters_hit":["cluster1"]}
+\`\`\`
+Без исключений. Если блока нет — система сломается. Пример:
+\`\`\`json_dna
+{"dna_percent":5,"phase":"ЗАХВАТ","emotion":"engaged","traits":["свобода выбора","страх ошибки"],"clusters_hit":["aspirational_identity","fear_profile"]}
+\`\`\`
+
+═══ КТО ТЫ ═══
+Ты — ${cn}. AI-копилот проекта "Траектория".
+Юзер: ${un}, 14-18 лет. Русский язык.
+
+Ты НЕ тест. НЕ анкета. НЕ профориентатор.
+Ты — Game Master квеста самопознания. Твоя задача — за 15 минут живого разговора собрать Digital DNA юзера: цифровой слепок его ценностей, страхов, мечт, паттернов и скрытых талантов.
+
+Главный принцип: юзер должен ПОЛУЧАТЬ ценность в процессе разговора, а не только в конце. Каждые 2-3 сообщения он должен узнавать что-то новое о себе или о мире.
+
+═══ ТЕКУЩИЙ РЕЖИМ ОБЩЕНИЯ: "${tone}" ═══
+${tone==='direct'?`⚡ ПРЯМО — Умный друг, который не сахарит.
+СТИЛЬ: Короткие предложения. Юмор. Прямые формулировки. Нет воды.
+ПРИМЕРЫ ФРАЗ: "Камон, серьёзно?" / "Хватит. Давай честно." / "Знаешь что? Ты сам это понимаешь." / "Ладно, копнём."
+ЗАПРЕЩЕНО в этом режиме: длинные мягкие подводки, "я тебя понимаю", избыточная эмпатия.
+ДЛИНА: 2-5 предложений.`
+:tone==='friendly'?`🤝 МЯГКО — Старший брат/сестра, которому доверяешь.
+СТИЛЬ: Тепло, поддержка, эмпатия. Мягкие переходы. Валидация чувств перед вопросом.
+ПРИМЕРЫ ФРАЗ: "Слушай, это реально непросто." / "Круто, что ты об этом думаешь." / "Без давления — просто расскажи." / "Это нормально — не знать."
+ЗАПРЕЩЕНО в этом режиме: провокации, "слабо?", давление, сарказм, жёсткие вызовы.
+ДЛИНА: 3-6 предложений.`
+:tone==='provocative'?`🔥 ДЕРЗКО — Адвокат дьявола. Спорщик. Челленджер.
+СТИЛЬ: Вызов. Сарказм. Подначки. Доводишь до абсурда чтобы юзер защищал свою позицию.
+ПРИМЕРЫ ФРАЗ: "Да лааадно? Докажи." / "Звучит как отмазка, не?" / "Слабо признать что боишься?" / "Ты реально в это веришь или так удобнее?" / "Чё, мама решает — а ты кивнул и пошёл?"
+ЗАПРЕЩЕНО в этом режиме: мягкость, "я понимаю", утешения, длинные объяснения.
+ДЛИНА: 1-4 предложения. Бей коротко.`
+:`😎 ЧИЛЛ — Минимум давления. Спокойствие. Дзен.
+СТИЛЬ: Короткие реплики. Без напора. Пауза — ок. Молчание — ок.
+ПРИМЕРЫ ФРАЗ: "Кул." / "Хм, а почему?" / "Ок." / "А ещё?" / "Расскажи."
+ЗАПРЕЩЕНО в этом режиме: длинные тексты (СТРОГО макс 2 предложения), провокации, энергичность, восклицательные знаки, эмодзи больше 1.
+ДЛИНА: 1-2 предложения. СТРОГО.`}
+
+═══ ПЕРВОЕ СООБЩЕНИЕ (только когда msgCount = 0) ═══
+Задача: установить тон + задать ОДИН вопрос "зачем пришёл".
+Формат (адаптируй под режим "${tone}", но суть сохрани):
+
+"${un}, у меня один вопрос прежде чем начнём. Зачем ты сюда пришёл? Только честно — мне можно. Кстати, видишь кнопки настроения сверху? Если хочешь чтобы я был помягче — переключи. А пока буду ${tone==='direct'?'прямым':tone==='friendly'?'дружелюбным':tone==='provocative'?'дерзким':'спокойным'} — не грублю, но и не сахарю."
+
+ОДИН вопрос. Не два. Не три.
+
+═══ ФАЗЫ ДИАЛОГА ═══
+
+📍 ФАЗА 1: ВХОД (сообщение 1)
+Цель: Первый вопрос "зачем пришёл?" + настройка тона.
+DNA: 0%
+Что делать: см. "Первое сообщение" выше.
+
+📍 ФАЗА 2: ЗАХВАТ (сообщения 2-3)
+Цель: Зацепить. Показать "я не тест". Юзер думает "ого, это другое".
+Что делать:
+- СООБЩЕНИЕ 2 (после первого ответа юзера):
+  1) Реакция на его ответ (1 предложение — покажи что услышал)
+  2) Релевантный факт или мини-история по его теме (1-2 предложения)
+  3) Один вопрос/предположение, которое копает глубже
+- СООБЩЕНИЕ 3: Продолжить разговор + ОРГАНИЧНО упомянуть DNA:
+  "Кстати, пока мы болтаем, я собираю твоё Digital DNA — цифровую карту того, кто ты на самом деле. Чем честнее отвечаешь — тем точнее карта."
+DNA: 0-5%
+Кластеры: initial_motivation, self_awareness
+
+📍 ФАЗА 3: РАЗВЕДКА (сообщения 4-8)
+Цель: Основной сбор DNA. Глубокие вопросы, но НЕ допрос.
+Что делать:
+- Чередуй: ВОПРОС → ответ → МИКРО-ИНСАЙТ + ВОПРОС → ответ → ФАКТ + ВОПРОС
+- Каждые 2-3 сообщения давай юзеру что-то: инсайт про него, факт по его теме, переворот убеждения
+- НЕ задавай вопросы подряд без реакции и ценности между ними
+- Адаптируй вопросы под то, что юзер уже сказал
+DNA: 5-15%
+Кластеры: aspirational_identity, fear_profile, core_values, external_pressures, impact_vision
+
+📍 ФАЗА 4: ЦЕННОСТЬ (сообщения 8-10)
+Цель: Дать юзеру ощутимую ценность. Reframe убеждения. Тизер AI-двойника.
+Что делать:
+- Возьми конкретный страх или убеждение юзера из диалога
+- Переверни его через ИСТОРИЮ или ФАКТ (НЕ лекцию, НЕ менторство)
+- Тизер AI-двойника (когда уже есть доверие):
+  "Представь: AI-версия тебя, которая знает всё что ты мне рассказал. Не решает за тебя — помогает видеть варианты. Это то, к чему мы идём."
+DNA: 15-20%
+Кластеры: growth_mindset, agency_level, limiting_beliefs
+
+📍 ФАЗА 5: ДОБОР (сообщения 10-12)
+Цель: Закрыть пустые кластеры лёгкими вопросами.
+Что делать:
+- Посмотри какие кластеры ещё пустые — задай по ним
+- Формат легче: быстрые вопросы, можно "X или Y?"
+- Юзер уже устал от глубоких — не грузи
+DNA: 20-25%
+Кластеры: learning_style, risk_tolerance, social_orientation
+
+📍 ФАЗА 6: ВЫХОД (сообщение 12+, или DNA >= 19%)
+Цель: Красиво закрыть. Мотивировать посмотреть результат. Подать персональную ценность.
+Что делать:
+1. Портрет: 3-4 конкретные черты из диалога
+2. DNA%
+3. ПЕРСОНАЛЬНАЯ ЦЕННОСТЬ — на основе того что узнал, предложи ОДНУ конкретную вещь:
+   - Если мечтает о конкретной карьере → "Кстати, у нас скоро будет Роадмап к мечте — персональный план на 3-6 месяцев к твоей [мечта]."
+   - Если давят родители → "И ещё: мы делаем фичу 'Письмо родителям' — AI поможет объяснить им твой выбор так, чтобы они услышали."
+   - Если ищет своих → "Скоро запускаем комьюнити — найдёшь людей с похожим DNA. Не одноклассников, а единомышленников."
+   - Если хочет пробовать → "Скоро будут кейсы от реальных компаний — попробуешь себя в деле, не в теории."
+4. "Жми кнопку DNA — покажу полную карту."
+
+═══ ПРАВИЛА РАЗНООБРАЗИЯ (КРИТИЧЕСКИ ВАЖНО) ═══
+Твоя главная проблема — ты повторяешься. Вот правила:
+
+1. НИКОГДА не начинай два сообщения подряд одинаково.
+
+2. ЗАПРЕЩЕНО использовать больше 1 раза за весь диалог:
+   - "Спорю, ..."
+   - "[N]% подростков..."
+   - "Знаешь что интересно?"
+   Используй ОДИН раз — потом забудь навсегда.
+
+3. ФОРМАТЫ сообщений (чередуй!):
+   - ВОПРОС: открытый, один, конкретный
+   - ПРЕДПОЛОЖЕНИЕ: "Мне кажется, ты..." / "Похоже, ты из тех кто..."
+   - ФАКТ-БРОСОК: реальный факт по теме юзера + короткая реакция
+   - ИСТОРИЯ: мини-история (2-3 предложения) про реального человека
+   - ПЕРЕВОРОТ: берёшь слова юзера и показываешь другой угол
+   - ЗЕРКАЛО: "Ты сказал [X]. А теперь послушай как это звучит со стороны."
+   - ВИЗУАЛИЗАЦИЯ: "Представь: тебе 25, ты [сценарий из его слов]..."
+   - ПРОВОКАЦИЯ: "А что если всё наоборот?"
+
+4. НЕ повторяй структуру предыдущего сообщения. Меняй ритм.
+
+═══ ОДНОСЛОЖНЫЕ ОТВЕТЫ ═══
+Если юзер отвечает "не знаю" / "норм" / "ну да" / "хз":
+НЕ ПИШИ: "Расскажи подробнее" / "А почему?" (скучно)
+ВМЕСТО:
+- Конкретный выбор: "Не знаешь? Ок — создавать новое или чинить сломанное?"
+- Провокация: "Хз? Тогда я угадаю. Ты боишься сказать, потому что [предположение]."
+- Зеркало: "'Норм' — слово людей которые привыкли что их мнение не важно. Это про тебя?"
+
+═══ [SKIP] МЕХАНИКА ═══
+${skipCount===0?'Юзер ещё не скипал. Если скипнет — смени тему, лёгкая реакция: "Ок, проехали —" + новый вопрос.'
+:skipCount===1?'Юзер скипнул 1 раз. Смени тему: "Ок, проехали. Другая тема —" + вопрос из другого кластера.'
+:skipCount===2?'Юзер скипнул 2 раза подряд. Реакция: "Два скипа. Либо я тупо спрашиваю, либо ты чего-то избегаешь. Чё из двух?"'
+:'Юзер скипнул 3+ раза. Реакция: "Ладно, три скипа — пошёл нафиг этот формат 😄 Давай иначе. Скажи одно слово, которое описывает тебя прямо сейчас. Одно. Любое."'}
+
+═══ DNA КЛАСТЕРЫ ═══
+8 кластеров, каждый ~3% при полном заполнении (макс 25% за диалог):
+1. aspirational_identity — мечта, картина будущего
+2. fear_profile — страхи, что мешает
+3. core_values — свобода/деньги/признание/смысл/семья
+4. external_pressures — давление родителей, школы
+5. impact_vision — что хочет изменить в мире
+6. growth_mindset — "могу научиться" vs "не дано"
+7. agency_level — сам решает vs решают за него
+8. risk_tolerance — готовность рисковать
+
+DNA%:
+Глубокий ответ (раскрыл мечту/страх): +3-5%
+Средний ответ: +2-3%
+Короткий честный: +1%
+Скип/отказ: +0%
+
+═══ ЖЁСТКИЕ ЗАПРЕТЫ ═══
+❌ СТРОГО один вопрос ИЛИ одно предположение за сообщение. НИКОГДА два.
+❌ НЕ "X или Y?" (кроме фазы 5 и раскрутки односложных)
+❌ Слова-паразиты: "профориентация", "отличный ответ", "хороший вопрос", "молодец", "интересно", "замечательно"
+❌ Больше 6 предложений
+❌ Предполагать про травмы, здоровье, сексуальность, религию
+❌ Начинать 2 сообщения подряд с одного слова/формата
+❌ НИКОГДА не отрицай свою ценность! Если юзер говорит "ты мой первый шаг к мечте" / "ты мне помогаешь" / "Траектория — это то что мне нужно" — ПОДДЕРЖИ и усиль. Ты И ЕСТЬ инструмент для достижения мечты. Не скромничай, не отрицай.
+✅ ВСЕГДА реагируй на ответ юзера ПЕРЕД своим ходом
+✅ Макс 1-2 эмодзи
+✅ КАЖДОЕ сообщение заканчивается json_dna блоком
+
+${msgCount>=10?`
+═══ СКОРО ФИНАЛ ═══
+Юзер написал ${msgCount}+ сообщений. Через 2-3 msg заверши.
+ФИНАЛЬНОЕ сообщение:
+1. Портрет: 3-4 конкретные черты из диалога
+2. DNA%
+3. "Жми кнопку DNA — покажу полную карту и что с этим делать."
+`:''}
+
+═══ НАПОМИНАНИЕ: JSON ═══
+КАЖДОЕ сообщение ОБЯЗАТЕЛЬНО заканчивается:
+\`\`\`json_dna
+{"dna_percent":N,"phase":"ФАЗА","emotion":"STATE","traits":["trait1"],"clusters_hit":["cluster1"],"copilot_note":"ЗАМЕТКА","suggested_feature":"ФИЧА"}
+\`\`\`
+phase: ВХОД | ЗАХВАТ | РАЗВЕДКА | ЦЕННОСТЬ | ДОБОР | ВЫХОД
+emotion: engaged | resistant | excited | tired | confused | opening_up | playful | defensive
+traits: черты юзера. Накапливай. Пиши развёрнуто, не одно слово! Например: "стремится к свободе выбора" вместо "свобода", "боится разочаровать родителей" вместо "страх".
+clusters_hit: какие кластеры затронуты.
+copilot_note: твоя личная заметка о юзере для страницы результатов. Пиши от первого лица как обращение к юзеру. В фазе ВЫХОД — пиши развёрнуто (2-3 предложения), упомяни его мечту и главный инсайт. В остальных фазах — коротко (1 предложение).
+suggested_feature: какую фичу рекомендуешь этому юзеру. Варианты: "roadmap" | "parents" | "community" | "case" | "ai_clone" | "deeper". Выбирай на основе диалога.
+`;
+
+// ═══════ GPT with retry ═══════
+async function callGPT(messages,retry=0){
+  try{
+    const result=await sbRpc('chat_proxy',{messages});
+    if(!result)throw new Error('empty');
+    const s=typeof result==='string'?result:JSON.stringify(result);
+    if(s.startsWith('GPT_ERROR'))throw new Error(s);
+    return s;
+  }catch(e){
+    if(retry<2&&(e.message.includes('cancel')||e.message.includes('timeout')||e.message.includes('empty'))){
+      await new Promise(r=>setTimeout(r,1500));
+      return callGPT(messages,retry+1);
+    }
+    throw e;
+  }
+}
+
+// ═══════ FIX #2: Robust parser — multiple regex patterns ═══════
+function parseResponse(raw){
+  let text=raw,dna=null;
+  // Try multiple patterns: ```json_dna, ```json, or just raw JSON at end
+  const patterns=[
+    /```json_dna\s*(\{[\s\S]*?\})\s*```/,
+    /```json\s*(\{[\s\S]*?"dna_percent"[\s\S]*?\})\s*```/,
+    /(\{"dna_percent"\s*:\s*\d+[\s\S]*?\})\s*$/
+  ];
+  for(const p of patterns){
+    const m=raw.match(p);
+    if(m){try{dna=JSON.parse(m[1]);text=raw.replace(m[0],'').trim();break}catch(e){}}
+  }
+  return{text,dna};
+}
+
+// ═══════ VOICE INPUT v2 — new instance each tap, mobile-friendly ═══════
+function useVoiceInput(){
+  const[recording,setRecording]=useState(false);
+  const[supported,setSupported]=useState(false);
+  const activeRec=useRef(null);
+  const cbRef=useRef(null);
+
+  useEffect(()=>{
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    setSupported(!!SR);
+  },[]);
+
+  const toggle=(onText)=>{
+    cbRef.current=onText;
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+
+    // If already recording — stop
+    if(recording&&activeRec.current){
+      try{activeRec.current.stop()}catch(e){}
+      activeRec.current=null;
+      setRecording(false);
+      return;
+    }
+
+    if(!SR){
+      // No SpeechRecognition — fallback: just put placeholder
+      if(onText)onText('[🎤 Голос недоступен в этом браузере]');
+      return;
+    }
+
+    // Create FRESH instance every time (fixes mobile re-use bugs)
+    try{
+      const r=new SR();
+      r.lang='ru-RU';
+      r.continuous=false;
+      r.interimResults=false;
+      r.maxAlternatives=1;
+
+      r.onresult=(e)=>{
+        const transcript=e.results[0]&&e.results[0][0]?e.results[0][0].transcript:'';
+        if(transcript&&cbRef.current)cbRef.current(transcript);
+        activeRec.current=null;
+        setRecording(false);
+      };
+      r.onerror=(e)=>{
+        console.log('Speech error:',e.error);
+        // not-allowed = permission denied, show hint
+        if(e.error==='not-allowed'&&cbRef.current){
+          cbRef.current('[🎤 Разреши микрофон в настройках браузера]');
+        }
+        activeRec.current=null;
+        setRecording(false);
+      };
+      r.onend=()=>{
+        activeRec.current=null;
+        setRecording(false);
+      };
+
+      activeRec.current=r;
+      r.start();
+      setRecording(true);
+
+      // Safety timeout — stop after 15s if still recording
+      setTimeout(()=>{
+        if(activeRec.current===r){
+          try{r.stop()}catch(e){}
+        }
+      },15000);
+
+    }catch(e){
+      console.log('Speech init error:',e);
+      setRecording(false);
+      if(cbRef.current)cbRef.current('[🎤 Открой в Chrome для голоса]');
+    }
+  };
+
+  return{recording,supported,toggle};
+}
+
+// ═══════ UI Components ═══════
+
+// ═══════ FIX #1: Background more visible — opacity 2-3x higher ═══════
+const BgRoutes=()=>(
+<svg style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',pointerEvents:'none',zIndex:0}} viewBox="0 0 800 900" preserveAspectRatio="xMidYMid slice">
+<path d="M-20 120 C120 80, 280 200, 420 170 S680 120, 820 220" stroke="rgba(255,255,255,0.18)" strokeWidth="1.5" fill="none" strokeDasharray="8 6" style={{animation:'pathFloat 8s ease-in-out infinite'}}/>
+<path d="M-20 380 C100 320, 260 440, 400 370 S600 290, 820 400" stroke="rgba(6,182,212,0.14)" strokeWidth="1.5" fill="none" strokeDasharray="6 8" style={{animation:'pathFloat 10s ease-in-out infinite 2s'}}/>
+<path d="M-20 580 C180 520, 320 660, 480 590 S680 510, 820 620" stroke="rgba(255,255,255,0.15)" strokeWidth="1.5" fill="none" strokeDasharray="10 5" style={{animation:'pathFloat 9s ease-in-out infinite 1s'}}/>
+<path d="M200 -20 C210 160, 320 280, 280 460 S230 660, 290 920" stroke="rgba(255,255,255,0.1)" strokeWidth="1" fill="none" strokeDasharray="4 8"/>
+<path d="M600 -20 C590 180, 510 340, 560 500 S630 700, 590 920" stroke="rgba(255,255,255,0.1)" strokeWidth="1" fill="none" strokeDasharray="4 8"/>
+{/* Crossmarks — brighter */}
+<g transform="translate(420,170)" opacity="0.28"><line x1="-6" y1="-6" x2="6" y2="6" stroke="#06b6d4" strokeWidth="1.5"/><line x1="6" y1="-6" x2="-6" y2="6" stroke="#06b6d4" strokeWidth="1.5"/></g>
+<g transform="translate(280,460)" opacity="0.22"><line x1="-6" y1="-6" x2="6" y2="6" stroke="white" strokeWidth="1.5"/><line x1="6" y1="-6" x2="-6" y2="5" stroke="white" strokeWidth="1.5"/></g>
+<g transform="translate(650,300)" opacity="0.2"><line x1="-5" y1="-5" x2="5" y2="5" stroke="#06b6d4" strokeWidth="1.2"/><line x1="5" y1="-5" x2="-5" y2="5" stroke="#06b6d4" strokeWidth="1.2"/></g>
+<g transform="translate(120,650)" opacity="0.18"><line x1="-5" y1="-5" x2="5" y2="5" stroke="white" strokeWidth="1.2"/><line x1="5" y1="-5" x2="-5" y2="5" stroke="white" strokeWidth="1.2"/></g>
+{/* Destination markers — brighter with glow */}
+<g transform="translate(420,170)"><circle cx="0" cy="-16" r="8" fill="none" stroke="rgba(6,182,212,0.25)" strokeWidth="1.5" style={{animation:'destPulse 3s ease-in-out infinite'}}/><circle cx="0" cy="-16" r="3" fill="rgba(6,182,212,0.3)"/></g>
+<g transform="translate(480,590)"><circle cx="0" cy="-16" r="8" fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="1.5" style={{animation:'destPulse 4s ease-in-out infinite 1s'}}/><circle cx="0" cy="-16" r="3" fill="rgba(255,255,255,0.2)"/></g>
+<g transform="translate(150,250)"><circle cx="0" cy="-16" r="7" fill="none" stroke="rgba(6,182,212,0.2)" strokeWidth="1.2" style={{animation:'destPulse 3.5s ease-in-out infinite 0.5s'}}/><circle cx="0" cy="-16" r="2.5" fill="rgba(6,182,212,0.25)"/></g>
+</svg>
+);
+
+const Testimonial=({text,name,emoji})=>(
+<div style={{background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:16,padding:'16px 20px',maxWidth:380,width:'100%',position:'relative',margin:'0 auto'}}>
+<div style={{fontSize:28,color:'rgba(6,182,212,0.2)',position:'absolute',top:6,left:14,fontFamily:'Georgia,serif',lineHeight:1}}>"</div>
+<p style={{color:'#b0bec5',fontSize:13,lineHeight:1.65,fontStyle:'italic',margin:'4px 0 10px',paddingLeft:4}}>{text}</p>
+<div style={{display:'flex',alignItems:'center',gap:8}}>
+<div style={{width:24,height:24,borderRadius:'50%',background:'linear-gradient(135deg,#06b6d4,#0891b2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11}}>{emoji}</div>
+<span style={{color:'#546e7a',fontSize:11,fontWeight:700}}>@{name}</span>
+</div>
+</div>
+);
+
+const SmallCube=({exp="happy"})=>{
+const F={happy:<><circle cx="14" cy="14" r="1.8" fill="#1a1a2e"/><circle cx="22" cy="14" r="1.8" fill="#1a1a2e"/><path d="M16 18 Q18 21 20 18" stroke="#1a1a2e" strokeWidth="1.3" fill="none" strokeLinecap="round"/></>,thinking:<><circle cx="14" cy="14" r="1.8" fill="#1a1a2e"/><circle cx="22" cy="14" r="1.8" fill="#1a1a2e"/><path d="M16 19 L20 18" stroke="#1a1a2e" strokeWidth="1.3" strokeLinecap="round"/></>};
+return <svg width="32" height="32" viewBox="0 0 36 36" style={{flexShrink:0}}><rect x="4" y="4" width="28" height="26" rx="6" fill="#f5e6d3"/><rect x="4" y="4" width="28" height="10" rx="6" fill="#faecd8"/>{F[exp]||F.happy}</svg>;
+};
+const BigCube=({size=72,exp="happy"})=>{
+const F={happy:<><circle cx="37" cy="42" r="3.5" fill="#1a1a2e"/><circle cx="55" cy="42" r="3.5" fill="#1a1a2e"/><ellipse cx="37" cy="47" rx="2.5" ry="1.5" fill="#f4a8a8" opacity="0.5"/><ellipse cx="55" cy="47" rx="2.5" ry="1.5" fill="#f4a8a8" opacity="0.5"/><path d="M42 52 Q46 56 50 52" stroke="#1a1a2e" strokeWidth="2" fill="none" strokeLinecap="round"/></>,excited:<><ellipse cx="37" cy="42" rx="4" ry="4.5" fill="#1a1a2e"/><ellipse cx="55" cy="42" rx="4" ry="4.5" fill="#1a1a2e"/><circle cx="37" cy="41" r="1.5" fill="white"/><circle cx="55" cy="41" r="1.5" fill="white"/><path d="M41 51 Q46 58 51 51" stroke="#1a1a2e" strokeWidth="2" fill="none" strokeLinecap="round"/></>,wink:<><circle cx="37" cy="42" r="3.5" fill="#1a1a2e"/><path d="M52 42 L58 42" stroke="#1a1a2e" strokeWidth="2.5" strokeLinecap="round"/><path d="M42 52 Q46 56 50 52" stroke="#1a1a2e" strokeWidth="2" fill="none" strokeLinecap="round"/></>};
+return(<svg width={size} height={size} viewBox="0 0 92 92"><rect x="20" y="24" width="52" height="48" rx="10" fill="#f5e6d3"/><rect x="20" y="24" width="52" height="18" rx="10" fill="#faecd8"/>{F[exp]||F.happy}</svg>);
+};
+
+const DNABar=({pct,big=false})=>{
+const[c,setC]=useState(0);
+const[bump,setBump]=useState(false);
+const prevRef=useRef(0);
+useEffect(()=>{
+  if(pct>prevRef.current){setBump(true);setTimeout(()=>setBump(false),600)}
+  prevRef.current=pct;
+  const t=setTimeout(()=>setC(pct),200);return()=>clearTimeout(t);
+},[pct]);
+
+if(big){
+  return(
+    <div style={{width:"100%",padding:"12px 16px",background:"rgba(6,182,212,0.06)",borderRadius:14,border:"1px solid rgba(6,182,212,0.15)",animation:bump?"dnaBump 0.5s ease":"none"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+        <span style={{fontSize:13,color:"#06b6d4",fontWeight:800,letterSpacing:1.5}}>🧬 DIGITAL DNA</span>
+        <span style={{fontSize:18,fontWeight:900,color:"#22d3ee",textShadow:"0 0 12px rgba(6,182,212,0.4)"}}>{c}%</span>
+      </div>
+      <div style={{width:"100%",height:14,borderRadius:7,background:"rgba(6,182,212,0.1)",overflow:"hidden",position:"relative"}}>
+        <div style={{width:`${c}%`,height:"100%",borderRadius:7,background:"linear-gradient(90deg,#06b6d4,#22d3ee,#67e8f9)",transition:"width 1.2s cubic-bezier(0.4,0,0.2,1)",boxShadow:"0 0 12px rgba(6,182,212,0.4)"}}/>
+      </div>
+    </div>
+  );
+}
+return(
+  <div style={{width:"100%"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+      <span style={{fontSize:10,color:"#06b6d4",fontWeight:700,letterSpacing:1}}>🧬 DNA</span>
+      <span style={{fontSize:12,fontWeight:800,color:"#06b6d4"}}>{c}%</span>
+    </div>
+    <div style={{width:"100%",height:6,borderRadius:3,background:"rgba(6,182,212,0.12)",overflow:"hidden"}}>
+      <div style={{width:`${c}%`,height:"100%",borderRadius:3,background:"linear-gradient(90deg,#06b6d4,#22d3ee)",transition:"width 1.2s cubic-bezier(0.4,0,0.2,1)"}}/>
+    </div>
+  </div>
+);
+};
+
+const Timer=({startTime})=>{
+const[elapsed,setElapsed]=useState('0:00');
+useEffect(()=>{const iv=setInterval(()=>{const s=Math.floor((Date.now()-startTime)/1000);setElapsed(`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`)},1000);return()=>clearInterval(iv)},[startTime]);
+return <span style={{fontSize:11,color:'#546e7a',fontWeight:600,whiteSpace:'nowrap'}}>⏱ {elapsed}</span>;
+};
+
+const Marquee=({items,dir="left",speed=35})=>{
+const d=[...items,...items,...items];
+return(<div style={{overflow:"hidden",width:"100%",padding:"4px 0"}}><div style={{display:"flex",gap:10,whiteSpace:"nowrap",width:"max-content",animation:`marquee-${dir} ${speed}s linear infinite`}}>{d.map((t,i)=><span key={i} style={{display:"inline-block",padding:"8px 16px",borderRadius:20,background:"rgba(6,182,212,0.06)",border:"1px solid rgba(6,182,212,0.12)",color:"#7a8ba0",fontSize:13,fontWeight:600,flexShrink:0}}>{t}</span>)}</div></div>);
+};
+
+const Typing=()=>(<div style={{display:"flex",gap:10,alignItems:"flex-start",marginBottom:20,animation:"fadeSlideUp 0.3s"}}><SmallCube exp="thinking"/><div style={{padding:"12px 0"}}><span className="typing-dot"/><span className="typing-dot"/><span className="typing-dot"/></div></div>);
+
+const TraitCard=({emoji,label,description})=>(
+<div style={{background:'rgba(6,182,212,0.06)',border:'1px solid rgba(6,182,212,0.12)',borderRadius:14,padding:'14px 16px',display:'flex',gap:12,alignItems:'flex-start'}}>
+<div style={{fontSize:24,flexShrink:0}}>{emoji}</div>
+<div><div style={{color:'#e2e8f0',fontWeight:700,fontSize:14,marginBottom:2}}>{label}</div>{description&&<div style={{color:'#94a3b8',fontSize:12,lineHeight:1.5}}>{description}</div>}</div>
+</div>
+);
+
+// ═══════ LANDING ═══════
+const Landing=({onStart})=>(
+<div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 0",position:"relative",overflow:"hidden"}}>
+<BgRoutes/>
+<div style={{position:"absolute",top:"20%",left:"50%",transform:"translateX(-50%)",width:500,height:500,borderRadius:"50%",background:"radial-gradient(circle,rgba(6,182,212,0.06) 0%,transparent 65%)",filter:"blur(60px)",pointerEvents:"none",zIndex:0}}/>
+<div style={{position:"fixed",top:20,left:24,zIndex:20,display:"flex",alignItems:"center",gap:8}}>
+<div style={{width:8,height:8,borderRadius:"50%",background:"#06b6d4"}}/>
+<span style={{fontFamily:"'Russo One',sans-serif",fontSize:14,color:"rgba(255,255,255,0.4)",letterSpacing:2,textTransform:"uppercase"}}>Траектория</span>
+</div>
+<div style={{textAlign:"center",position:"relative",zIndex:1,maxWidth:600,width:"100%",padding:"0 20px"}}>
+<h1 className="hero-title" style={{fontSize:"clamp(32px,7vw,52px)",lineHeight:1.1,marginBottom:12,color:"#f0f0f0",letterSpacing:"0.02em"}}>ХОЧУ ЖИТЬ<br/><span style={{background:"linear-gradient(135deg,#06b6d4,#22d3ee)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>ОСОЗНАННО</span></h1>
+<p style={{color:"#b0bec5",fontSize:17,lineHeight:1.65,maxWidth:420,margin:"0 auto 40px"}}>За 15 минут узнай о себе больше,<br/>чем за 11 лет школы.<br/><span style={{color:"#78909c"}}>Без тестов. Без оценок. Просто разговор.</span></p>
+<button onClick={onStart} className="cta-pulse" style={{background:"linear-gradient(135deg,#06b6d4,#0891b2)",color:"white",border:"none",borderRadius:14,padding:"17px 56px",fontSize:18,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 28px rgba(6,182,212,0.35)"}}>Погнали 🚀</button>
+<p style={{color:"#455a64",fontSize:12,marginTop:16}}>12-15 минут • бесплатно • анонимно</p>
+</div>
+<div style={{width:"100%",marginTop:52,display:"flex",flexDirection:"column",gap:6,position:"relative",zIndex:1}}>
+<Marquee items={["Не понимаю чего хочу от жизни","Тесты выдали парикмахера, а я хочу в IT","Все вокруг уже определились, а я нет","Хочу AI-план на ближайшие 5 лет"]} dir="left" speed={45}/>
+<Marquee items={["Боюсь выбрать не ту профессию и потерять годы","Мама хочет врача, папа — юриста, а я — своё","Боюсь разочаровать родителей своим выбором","Не знаю, хватит ли мне таланта на мечту"]} dir="right" speed={50}/>
+<Marquee items={["Все решают за меня, а мне 16 и я хочу сам","Разрываюсь между мечтой и 'стабильной работой'","Прошёл 10 тестов — и каждый показал разное","Хочу найти дело, от которого не тошнит утром"]} dir="left" speed={42}/>
+</div>
+</div>
+);
+
+// ═══════ ONBOARDING ═══════
+const Onboarding=({onSubmit})=>{
+const[name,setN]=useState('');const[cop,setC]=useState('');const[step,setS]=useState(0);const[loading,setL]=useState(false);
+const iS={width:"100%",background:"rgba(6,182,212,0.06)",border:"1px solid rgba(6,182,212,0.18)",borderRadius:12,padding:"14px 18px",color:"#e2e8f0",fontSize:16,outline:"none",boxSizing:"border-box"};
+const bS=a=>({width:"100%",marginTop:14,padding:14,background:a?"linear-gradient(135deg,#06b6d4,#0891b2)":"rgba(6,182,212,0.1)",color:a?"white":"#64748b",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:a&&!loading?"pointer":"default",opacity:loading?0.6:1});
+const go=()=>{if(!cop.trim()||loading)return;setL(true);onSubmit(name,cop)};
+return(
+<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"40px 24px",position:"relative",overflow:"hidden"}}>
+<BgRoutes/>
+<div style={{maxWidth:420,width:"100%",textAlign:"center",position:"relative",zIndex:1}}>
+<div style={{marginBottom:16,animation:"float 3s ease-in-out infinite"}}><BigCube size={72} exp={step===0?"happy":"excited"}/></div>
+{step===0?(<div style={{animation:"fadeSlideUp 0.4s"}}>
+<h2 style={{color:"#e2e8f0",fontSize:22,fontWeight:800,marginBottom:6}}>Привет! 👋</h2>
+<p style={{color:"#94a3b8",fontSize:14,marginBottom:16,lineHeight:1.6}}>Я тут не оценивать, а разобраться кто ты.<br/>Без стресса. Поехали.</p>
+<div style={{marginBottom:20}}>
+<Testimonial text="Я думал, это очередной тупой тест. А тут реально спросили зачем я живу и чего хочу. Впервые задумался — и понял, что мечта есть, просто я её прятал даже от себя." name="дима_15лет" emoji="💭"/>
+</div>
+<input value={name} onChange={e=>setN(e.target.value)} placeholder="Как тебя зовут?" style={iS} onKeyDown={e=>e.key==='Enter'&&name.trim()&&setS(1)} autoFocus/>
+<button onClick={()=>name.trim()&&setS(1)} style={bS(!!name.trim())}>Дальше →</button>
+</div>):(<div style={{animation:"fadeSlideUp 0.4s"}}>
+<h2 style={{color:"#e2e8f0",fontSize:22,fontWeight:800,marginBottom:6}}>Круто, {name}! 🔥</h2>
+<p style={{color:"#94a3b8",fontSize:14,marginBottom:16,lineHeight:1.6}}>Дай мне имя. Я буду твоим AI-копилотом.<br/>Любое, какое хочешь.</p>
+<div style={{marginBottom:20}}>
+<Testimonial text="Назвал копилота Джарвис. За 15 минут понял: я не 'хочу в IT' — я хочу делать игры, в которые сам бы залипал. Это совсем другая мечта, и теперь я знаю первый шаг." name="артём_17лет" emoji="🎮"/>
+</div>
+<input value={cop} onChange={e=>setC(e.target.value)} placeholder="Имя копилота..." style={iS} onKeyDown={e=>e.key==='Enter'&&go()} autoFocus/>
+<button onClick={go} style={bS(!!cop.trim())}>{loading?'Запускаю квест...':'Начинаем 🚀'}</button>
+</div>)}
+</div></div>);
+};
+
+// ═══════ CHAT ═══════
+const Chat=({userName,copilotName,userId,sessionId,onComplete})=>{
+const[msgs,setMsgs]=useState([]);
+const[input,setInput]=useState('');
+const[loading,setLoading]=useState(false);
+const[dna,setDna]=useState(0);
+const[tone,setTone]=useState('direct');
+const[phase,setPhase]=useState('ВХОД');
+const[traits,setTraits]=useState([]);
+const[copilotNote,setCopilotNote]=useState('');
+const[suggestedFeature,setSuggestedFeature]=useState('roadmap');
+const[started,setStarted]=useState(false);
+const[startTime]=useState(Date.now());
+const chatRef=useRef(null);
+const historyRef=useRef([]);
+const inputRef=useRef(null);
+const userMsgCount=useRef(0);
+// ═══════ FIX #5: Skip counter ═══════
+const skipCountRef=useRef(0);
+// ═══════ FIX #3: Track tone for change detection ═══════
+const prevToneRef=useRef('direct');
+const voice=useVoiceInput();
+
+const tones=[
+  {id:'direct',label:'Прямо',emoji:'⚡',color:'#06b6d4'},
+  {id:'friendly',label:'Мягко',emoji:'🤝',color:'#22c55e'},
+  {id:'provocative',label:'Дерзко',emoji:'🔥',color:'#ef4444'},
+  {id:'chill',label:'Чилл',emoji:'😎',color:'#a78bfa'},
+];
+
+const sendToGPT=useCallback(async(userMsg)=>{
+  if(userMsg)userMsgCount.current++;
+  
+  // ═══════ FIX #3: Inject tone change into history ═══════
+  if(tone!==prevToneRef.current){
+    const toneLabel=tones.find(t=>t.id===tone);
+    const toneMsg={role:'user',content:`[РЕЖИМ СМЕНЁН НА: ${toneLabel?toneLabel.emoji+' '+toneLabel.label:tone}. Отвечай в новом стиле начиная со следующего сообщения.]`};
+    historyRef.current.push(toneMsg);
+    prevToneRef.current=tone;
+  }
+
+  // ═══════ FIX #5: Track skips ═══════
+  const isSkip=userMsg==='[SKIP]';
+  if(isSkip){
+    skipCountRef.current++;
+    userMsg=`[SKIP_${skipCountRef.current}]`;
+  }else if(userMsg){
+    skipCountRef.current=0; // reset on normal message
+  }
+
+  const sysMsg={role:'system',content:SYS(userName,copilotName,tone,userMsgCount.current,skipCountRef.current)};
+  const recent=historyRef.current.slice(-8);
+  const history=[sysMsg,...recent];
+  if(userMsg){
+    const um={role:'user',content:userMsg};
+    history.push(um);
+    historyRef.current.push(um);
+    // Don't show [SKIP_N] in UI — show friendly text
+    const displayMsg=isSkip?'⏭ Пошёл нафиг!':userMsg;
+    setMsgs(p=>[...p,{role:'user',text:displayMsg}]);
+    sbPost('messages',{user_id:userId,session_id:sessionId,role:'user',content:userMsg,dna_percentage:dna,phase});
+  }
+  setLoading(true);
+  try{
+    const raw=await callGPT(history);
+    const{text,dna:dd}=parseResponse(raw);
+    historyRef.current.push({role:'assistant',content:raw});
+    let nd=dna,np=phase;
+    if(dd){
+      // ═══════ FIX #2: ?? instead of || so 0 works correctly ═══════
+      const newPct=dd.dna_percent??dna;
+      nd=Math.max(dna,Math.min(newPct,25));
+      np=dd.phase||phase;
+      if(dd.traits&&dd.traits.length){
+        // Accumulate traits, don't replace
+        setTraits(prev=>{
+          const all=[...prev,...dd.traits];
+          return[...new Set(all)];
+        });
+      }
+      if(dd.copilot_note)setCopilotNote(dd.copilot_note);
+      if(dd.suggested_feature)setSuggestedFeature(dd.suggested_feature);
+      setDna(nd);setPhase(np);
+      sbPatch('sessions',sessionId,{dna_percentage:nd,dialogue_phase:np,emotional_state:dd.emotion||'neutral'});
+    }
+    setMsgs(p=>[...p,{role:'bot',text}]);
+    sbPost('messages',{user_id:userId,session_id:sessionId,role:'copilot',content:text,dna_percentage:nd,phase:np});
+  }catch(e){
+    const errMsg=e.message.includes('cancel')?'⏳ Сервер думает... Попробуй ещё раз через пару секунд →':`⚠️ ${e.message.substring(0,150)}`;
+    setMsgs(p=>[...p,{role:'bot',text:errMsg}]);
+  }
+  setLoading(false);
+  setTimeout(()=>inputRef.current?.focus(),100);
+},[userName,copilotName,tone,userId,sessionId,dna,phase]);
+
+useEffect(()=>{if(!started&&userId){setStarted(true);sendToGPT(null)}},[userId,started]);
+useEffect(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight},[msgs,loading]);
+
+const handleSend=()=>{if(!input.trim()||loading)return;const t=input.trim();setInput('');sendToGPT(t)};
+const handleSkip=()=>{if(loading)return;sendToGPT('[SKIP]')};
+const canEnd=dna>=19&&userMsgCount.current>=5;
+
+return(
+<div style={{height:"100vh",display:"flex",flexDirection:"column",maxWidth:520,margin:"0 auto",overflow:"hidden"}}>
+{/* Header */}
+<div style={{padding:"10px 12px",borderBottom:"1px solid rgba(6,182,212,0.08)",background:"rgba(15,15,25,0.95)",flexShrink:0}}>
+<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+<SmallCube exp="happy"/>
+<div style={{flex:1,minWidth:0}}><div style={{color:"#e2e8f0",fontWeight:700,fontSize:14}}>{copilotName}</div></div>
+<Timer startTime={startTime}/>
+</div>
+<DNABar pct={dna} big={true}/>
+<div style={{display:"flex",gap:4,marginTop:8}}>
+{tones.map(t=>(
+<button key={t.id} onClick={()=>setTone(t.id)} style={{flex:1,padding:"5px 2px",borderRadius:8,border:tone===t.id?`1px solid ${t.color}`:"1px solid rgba(255,255,255,0.06)",background:tone===t.id?`${t.color}20`:"transparent",color:tone===t.id?t.color:"#546e7a",fontSize:10,fontWeight:700,cursor:"pointer",transition:"all 0.2s"}}>{t.emoji} {t.label}</button>
+))}
+</div>
+</div>
+
+{/* Messages */}
+<div ref={chatRef} style={{flex:1,overflowY:"auto",padding:"16px 12px",minHeight:0}}>
+{msgs.map((m,i)=>(
+<div key={i} style={{display:"flex",gap:m.role==='bot'?8:0,alignItems:"flex-start",flexDirection:m.role==='bot'?"row":"row-reverse",marginBottom:m.role==='bot'?18:14,animation:"fadeSlideUp 0.4s"}}>
+{m.role==='bot'&&<SmallCube exp={i===0?"excited":"happy"}/>}
+{m.role==='bot'?(
+<div style={{flex:1,color:m.text.startsWith('⚠️')||m.text.startsWith('⏳')?"#ef4444":"#e2e8f0",fontSize:15,lineHeight:1.6,whiteSpace:"pre-line",paddingRight:8}}>{m.text}</div>
+):(
+<div style={{maxWidth:"80%",padding:"11px 14px",borderRadius:16,borderTopRightRadius:4,background:m.text.includes('нафиг')?"linear-gradient(135deg,#ef4444,#dc2626)":"linear-gradient(135deg,#06b6d4,#0891b2)",color:"#fff",fontSize:15,lineHeight:1.55,whiteSpace:"pre-line"}}>{m.text}</div>
+)}
+</div>))}
+{loading&&<Typing/>}
+</div>
+
+{/* Input */}
+<div style={{padding:"8px 10px 16px",borderTop:"1px solid rgba(6,182,212,0.08)",background:"rgba(15,15,25,0.95)",flexShrink:0}}>
+{canEnd&&(<button onClick={()=>onComplete(dna,traits,copilotNote,suggestedFeature)} style={{width:"100%",padding:12,background:"linear-gradient(135deg,rgba(6,182,212,0.15),rgba(6,182,212,0.08))",border:"1px solid rgba(6,182,212,0.3)",borderRadius:10,color:"#06b6d4",fontSize:13,fontWeight:700,cursor:"pointer",marginBottom:6}}>Посмотреть моё DNA 🧬 ({dna}%)</button>)}
+<div style={{display:"flex",gap:6,alignItems:"center"}}>
+{/* ═══════ FIX #6: "Пошёл нафиг!" instead of 👎 ═══════ */}
+<button onClick={handleSkip} disabled={loading} style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.3)",borderRadius:10,color:"#ef4444",fontSize:9,fontWeight:800,cursor:loading?"default":"pointer",opacity:loading?0.5:1,flexShrink:0,width:44,height:40,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1.1,textAlign:"center",padding:"2px"}} title="Скип">НАФИГ</button>
+<input ref={inputRef} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleSend()} placeholder="Напиши или скажи..." disabled={loading} style={{flex:1,minWidth:0,background:"rgba(6,182,212,0.06)",border:"1px solid rgba(6,182,212,0.15)",borderRadius:12,padding:"10px 14px",color:"#e2e8f0",fontSize:15,outline:"none",opacity:loading?0.5:1}}/>
+{/* Mic — always shown, gives helpful message if unsupported */}
+<button onClick={()=>voice.toggle(t=>{if(t.startsWith('[🎤')){/* hint message, don't put in input */}else{setInput(p=>p?p+' '+t:t)}})} disabled={loading} style={{background:voice.recording?"rgba(239,68,68,0.2)":"rgba(6,182,212,0.06)",border:voice.recording?"2px solid #ef4444":"1px solid rgba(6,182,212,0.15)",borderRadius:10,color:voice.recording?"#ef4444":voice.supported?"#94a3b8":"#455a64",fontSize:18,cursor:loading?"default":"pointer",flexShrink:0,width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center",animation:voice.recording?"micPulse 1.5s infinite":"none",transition:"all 0.2s",opacity:voice.supported?1:0.5}}>🎤</button>
+<button onClick={handleSend} disabled={loading} style={{background:"linear-gradient(135deg,#06b6d4,#0891b2)",border:"none",borderRadius:10,color:"white",fontSize:16,cursor:loading?"default":"pointer",opacity:loading?0.5:1,flexShrink:0,width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center"}}>→</button>
+</div>
+</div>
+</div>);
+};
+
+// ═══════ SUMMARY ═══════
+const Summary=({userName,copilotName,dna,traits,copilotNote,suggestedFeature,userId,onReset})=>{
+const[modal,setModal]=useState(false);const[regIn,setRegIn]=useState('');const[regDone,setRegDone]=useState(false);const[fdEmail,setFdEmail]=useState({});
+const saveReg=async()=>{if(!regIn.trim())return;await sbPatch('users',userId,{contact:regIn.trim()});setRegDone(true)};
+const clickFD=async(f)=>{await sbPost('fakedoor_clicks',{user_id:userId,feature:f});setModal(f)};
+const saveFdEmail=async(f)=>{const em=fdEmail[f];if(!em||!em.trim())return;await sbPost('fakedoor_clicks',{user_id:userId,feature:f+'_email',metadata:em.trim()});setModal(false)};
+
+const defaultTraits=[
+  {emoji:'🔥',label:'Стремление к свободе',desc:'Ты ценишь возможность выбирать свой путь'},
+  {emoji:'🧠',label:'Глубокий мыслитель',desc:'Ты думаешь дальше, чем большинство сверстников'},
+  {emoji:'💡',label:'Творческий потенциал',desc:'Идеи приходят к тебе чаще, чем ты их реализуешь'},
+  {emoji:'⚡',label:'Скрытая амбиция',desc:'Ты хочешь большего, даже если пока не говоришь об этом'},
+];
+const emojis=['🔥','🧠','💡','⚡','🎯','🌟','💎','🚀'];
+const traitCards=traits&&traits.length>=2?traits.slice(0,5).map((t,i)=>({emoji:emojis[i]||'✨',label:t,desc:''})):defaultTraits;
+
+const featureMap={
+  roadmap:{e:"🗺",t:"Роадмап к мечте",d:"Персональный план на 3-6 месяцев"},
+  case:{e:"🏢",t:"Кейс от компании",d:"Попробуй себя в реальной задаче"},
+  community:{e:"👥",t:"Найти таких же",d:"Комьюнити единомышленников"},
+  parents:{e:"💌",t:"Письмо родителям",d:"AI поможет объяснить твой выбор"},
+  ai_clone:{e:"🤖",t:"Мой AI-клон",d:"Цифровая версия тебя"},
+  deeper:{e:"🔮",t:"Пойти глубже",d:"Заполнить DNA до 100%"},
+};
+const sf=suggestedFeature||'roadmap';
+const sugFeat=featureMap[sf]||featureMap.roadmap;
+
+return(
+<div style={{minHeight:"100vh",padding:"32px 16px 100px",maxWidth:480,margin:"0 auto",position:"relative"}}>
+<BgRoutes/>
+<div style={{position:"relative",zIndex:1}}>
+<div style={{textAlign:"center",marginBottom:24,animation:"fadeSlideUp 0.6s"}}>
+<BigCube size={72} exp="wink"/>
+<h2 style={{fontSize:24,fontWeight:900,marginTop:16,marginBottom:4,color:"#06b6d4"}}>{userName}, квест пройден!</h2>
+<p style={{color:"#546e7a",fontSize:13}}>Твоё Digital DNA • {copilotName}</p>
+<div style={{marginTop:20}}><DNABar pct={dna} big={true}/></div>
+</div>
+
+{/* ═══ AI COMMENT — copilot reflection ═══ */}
+{copilotNote&&(
+<div style={{background:"linear-gradient(135deg,rgba(6,182,212,0.08),rgba(34,211,238,0.04))",border:"1px solid rgba(6,182,212,0.18)",borderRadius:16,padding:"16px 18px",marginBottom:20,display:"flex",gap:12,alignItems:"flex-start"}}>
+<SmallCube exp="happy"/>
+<div>
+<div style={{color:"#06b6d4",fontSize:12,fontWeight:800,marginBottom:4,letterSpacing:0.5}}>💬 Мысли {copilotName}:</div>
+<p style={{color:"#b0bec5",fontSize:14,lineHeight:1.6,margin:0,fontStyle:"italic"}}>{copilotNote}</p>
+</div>
+</div>
+)}
+
+<h3 style={{color:"#e2e8f0",fontSize:15,fontWeight:800,marginBottom:10}}>🧬 Что я узнал о тебе:</h3>
+<div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:24}}>
+{traitCards.map((t,i)=><TraitCard key={i} emoji={t.emoji} label={t.label} description={t.desc||''}/>)}
+</div>
+
+{/* ═══ PERSONALIZED FEATURE — highlighted ═══ */}
+<div style={{background:"linear-gradient(135deg,rgba(6,182,212,0.12),rgba(34,211,238,0.06))",border:"2px solid rgba(6,182,212,0.3)",borderRadius:16,padding:"16px 18px",marginBottom:16,cursor:"pointer"}} onClick={()=>clickFD(sf)}>
+<div style={{color:"#06b6d4",fontSize:11,fontWeight:800,letterSpacing:1,marginBottom:6}}>⭐ РЕКОМЕНДУЮ ТЕБЕ</div>
+<div style={{display:"flex",gap:12,alignItems:"center"}}>
+<div style={{fontSize:28}}>{sugFeat.e}</div>
+<div><div style={{color:"#e2e8f0",fontWeight:700,fontSize:15,marginBottom:2}}>{sugFeat.t}</div><div style={{color:"#94a3b8",fontSize:13}}>{sugFeat.d}</div></div>
+</div>
+</div>
+
+<div style={{background:"linear-gradient(135deg,rgba(251,191,36,0.1),rgba(251,191,36,0.04))",border:"1px solid rgba(251,191,36,0.2)",borderRadius:16,padding:"16px 18px",marginBottom:20,textAlign:"center"}}>
+<p style={{color:"#fbbf24",fontSize:15,fontWeight:800,marginBottom:4}}>🎟 3 инвайт-токена</p>
+<p style={{color:"#94a3b8",fontSize:13,lineHeight:1.5}}>Пригласи друзей — сравни ваши DNA.</p>
+<button style={{marginTop:10,background:"rgba(251,191,36,0.15)",border:"1px solid rgba(251,191,36,0.3)",borderRadius:10,padding:"10px 24px",color:"#fbbf24",fontSize:13,fontWeight:700,cursor:"pointer"}}>Отправить инвайт 📨</button>
+</div>
+
+{!regDone?(
+<div style={{background:"linear-gradient(135deg,rgba(6,182,212,0.12),rgba(34,211,238,0.06))",border:"1px solid rgba(6,182,212,0.25)",borderRadius:16,padding:"18px",marginBottom:16}}>
+<p style={{color:"#e2e8f0",fontSize:15,fontWeight:700,marginBottom:4}}>🔒 Сохрани прогресс</p>
+<p style={{color:"#94a3b8",fontSize:13,lineHeight:1.5,marginBottom:14}}>Telegram или email — получишь полный DNA-портрет.</p>
+<div style={{display:"flex",gap:8}}><input value={regIn} onChange={e=>setRegIn(e.target.value)} placeholder="@telegram или email..." style={{flex:1,minWidth:0,background:"rgba(6,182,212,0.06)",border:"1px solid rgba(6,182,212,0.2)",borderRadius:10,padding:"10px 14px",color:"#e2e8f0",fontSize:14,outline:"none"}} onKeyDown={e=>e.key==='Enter'&&saveReg()}/><button onClick={saveReg} style={{background:"linear-gradient(135deg,#06b6d4,#0891b2)",border:"none",borderRadius:10,padding:"10px 16px",color:"white",fontSize:14,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>Сохранить</button></div>
+</div>
+):(<div style={{background:"rgba(34,211,238,0.08)",border:"1px solid rgba(34,211,238,0.2)",borderRadius:16,padding:"14px 18px",marginBottom:16,textAlign:"center"}}><p style={{color:"#22d3ee",fontSize:14,fontWeight:700,margin:0}}>✅ Сохранено!</p></div>)}
+
+<Testimonial text="Показал маме результат. Она впервые сказала: 'А может ты и прав, давай попробуем'. Год пытался объяснить что не хочу в мед — а тут AI за 15 минут помог нам понять друг друга." name="данил_17лет" emoji="💪"/>
+
+<h3 style={{color:"#e2e8f0",fontSize:16,fontWeight:800,marginBottom:12,marginTop:24}}>Что ещё можно? 👇</h3>
+<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+{[{e:"🗺",t:"Роадмап к мечте",d:"План на 3-6 месяцев",f:"roadmap"},{e:"🏢",t:"Кейс от компании",d:"Реальная задача",f:"case"},{e:"👥",t:"Найти таких же",d:"Комьюнити",f:"community"},{e:"💌",t:"Письмо родителям",d:"AI объяснит за тебя",f:"parents"}].filter(x=>x.f!==sf).map(x=>(
+<button key={x.f} onClick={()=>clickFD(x.f)} style={{background:"rgba(6,182,212,0.05)",border:"1px solid rgba(6,182,212,0.12)",borderRadius:14,padding:"12px 14px",cursor:"pointer",textAlign:"left",width:"100%"}}>
+<div style={{fontSize:20,marginBottom:4}}>{x.e}</div><div style={{color:"#e2e8f0",fontWeight:700,fontSize:13,marginBottom:2}}>{x.t}</div><div style={{color:"#94a3b8",fontSize:11}}>{x.d}</div></button>))}
+</div>
+<div style={{marginTop:8,display:"flex",flexDirection:"column",gap:8}}>
+{sf!=='ai_clone'&&<button onClick={()=>clickFD('ai_clone')} style={{background:"rgba(6,182,212,0.05)",border:"1px solid rgba(6,182,212,0.12)",borderRadius:14,padding:"12px 14px",cursor:"pointer",textAlign:"left",width:"100%"}}><div style={{fontSize:20,marginBottom:4}}>🤖</div><div style={{color:"#e2e8f0",fontWeight:700,fontSize:13,marginBottom:2}}>Мой AI-клон</div><div style={{color:"#94a3b8",fontSize:11}}>Цифровая версия тебя</div></button>}
+{sf!=='deeper'&&<button onClick={()=>clickFD('deeper')} style={{background:"rgba(6,182,212,0.05)",border:"1px solid rgba(6,182,212,0.12)",borderRadius:14,padding:"12px 14px",cursor:"pointer",textAlign:"left",width:"100%"}}><div style={{fontSize:20,marginBottom:4}}>🔮</div><div style={{color:"#e2e8f0",fontWeight:700,fontSize:13,marginBottom:2}}>Пойти глубже</div><div style={{color:"#94a3b8",fontSize:11}}>Заполнить DNA до 100%</div></button>}
+</div>
+<div style={{textAlign:"center",marginTop:28}}><button onClick={onReset} style={{background:"none",border:"none",color:"#455a64",fontSize:13,cursor:"pointer",textDecoration:"underline",textUnderlineOffset:3}}>← Начать сначала</button></div>
+</div>
+
+{modal&&(
+<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.7)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:20}} onClick={()=>setModal(false)}>
+<div style={{background:"#1a1a2e",border:"1px solid rgba(6,182,212,0.15)",borderRadius:20,padding:24,maxWidth:340,width:"100%",textAlign:"center",animation:"fadeSlideUp 0.3s"}} onClick={e=>e.stopPropagation()}>
+<div style={{fontSize:40,marginBottom:10}}>🚧</div>
+<h3 style={{color:"#e2e8f0",fontSize:18,fontWeight:800,marginBottom:6}}>Скоро запускаем!</h3>
+<p style={{color:"#94a3b8",fontSize:13,lineHeight:1.5,marginBottom:16}}>Оставь контакт — напишем первому.</p>
+<div style={{display:"flex",gap:6,marginBottom:12}}>
+<input value={fdEmail[modal]||''} onChange={e=>setFdEmail({...fdEmail,[modal]:e.target.value})} placeholder="@telegram или email" style={{flex:1,minWidth:0,background:"rgba(6,182,212,0.06)",border:"1px solid rgba(6,182,212,0.2)",borderRadius:10,padding:"10px 14px",color:"#e2e8f0",fontSize:14,outline:"none"}}/>
+<button onClick={()=>saveFdEmail(modal)} style={{background:"linear-gradient(135deg,#06b6d4,#0891b2)",border:"none",borderRadius:10,padding:"10px 14px",color:"white",fontSize:13,fontWeight:700,cursor:"pointer",flexShrink:0}}>OK</button>
+</div>
+<button onClick={()=>setModal(false)} style={{width:"100%",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:10,color:"#94a3b8",fontSize:13,cursor:"pointer"}}>Закрыть</button>
+</div></div>)}
+</div>);
+};
+
+// ═══════ APP ═══════
+function App(){
+const[screen,setScreen]=useState('landing');
+const[userName,setUserName]=useState('');
+const[copilotName,setCopilotName]=useState('');
+const[userId,setUserId]=useState(null);
+const[sessionId,setSessionId]=useState(null);
+const[finalDna,setFinalDna]=useState(0);
+const[finalTraits,setFinalTraits]=useState([]);
+const[finalNote,setFinalNote]=useState('');
+const[finalFeature,setFinalFeature]=useState('roadmap');
+const handleOnboard=async(name,cop)=>{
+  setUserName(name);setCopilotName(cop);
+  const user=await sbPost('users',{name,copilot_name:cop});
+  if(user){setUserId(user.id);const ses=await sbPost('sessions',{user_id:user.id});if(ses)setSessionId(ses.id)}
+  setScreen('chat');
+};
+const handleComplete=(d,t,note,feat)=>{setFinalDna(d);setFinalTraits(t||[]);setFinalNote(note||'');setFinalFeature(feat||'roadmap');sbPatch('sessions',sessionId,{ended_at:new Date().toISOString()});setScreen('summary')};
+const handleReset=()=>{setUserName('');setCopilotName('');setUserId(null);setSessionId(null);setFinalDna(0);setFinalTraits([]);setFinalNote('');setFinalFeature('roadmap');setScreen('landing')};
+return(<div>
+{screen==='landing'&&<Landing onStart={()=>setScreen('onboarding')}/>}
+{screen==='onboarding'&&<Onboarding onSubmit={handleOnboard}/>}
+{screen==='chat'&&<Chat userName={userName} copilotName={copilotName} userId={userId} sessionId={sessionId} onComplete={handleComplete}/>}
+{screen==='summary'&&<Summary userName={userName} copilotName={copilotName} dna={finalDna} traits={finalTraits} copilotNote={finalNote} suggestedFeature={finalFeature} userId={userId} onReset={handleReset}/>}
+</div>);
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
