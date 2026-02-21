@@ -474,7 +474,17 @@ const d=[...items,...items,...items];
 return(<div style={{overflow:"hidden",width:"100%",padding:"4px 0"}}><div style={{display:"flex",gap:10,whiteSpace:"nowrap",width:"max-content",animation:`marquee-${dir} ${speed}s linear infinite`}}>{d.map((t,i)=><span key={i} style={{display:"inline-block",padding:"8px 16px",borderRadius:20,background:"rgba(6,182,212,0.06)",border:"1px solid rgba(6,182,212,0.12)",color:"#7a8ba0",fontSize:13,fontWeight:600,flexShrink:0}}>{t}</span>)}</div></div>);
 };
 
-const Typing=()=>(<div style={{display:"flex",gap:10,alignItems:"flex-start",marginBottom:20,animation:"fadeSlideUp 0.3s"}}><SmallCube exp="thinking"/><div style={{padding:"12px 0"}}><span className="typing-dot"/><span className="typing-dot"/><span className="typing-dot"/></div></div>);
+const Typing=()=>{
+const[phase,setPhase]=useState(0);
+useEffect(()=>{
+  const t1=setTimeout(()=>setPhase(1),5000);  // 5s
+  const t2=setTimeout(()=>setPhase(2),15000); // 15s
+  const t3=setTimeout(()=>setPhase(3),30000); // 30s
+  return()=>{clearTimeout(t1);clearTimeout(t2);clearTimeout(t3)};
+},[]);
+const msgs=['','Думаю чуть дольше...','Глубоко копаю, подожди ещё немного...','Почти готово, ещё секунду...'];
+return(<div style={{display:"flex",gap:10,alignItems:"flex-start",marginBottom:20,animation:"fadeSlideUp 0.3s"}}><SmallCube exp="thinking"/><div style={{padding:"12px 0"}}><div style={{display:"flex",alignItems:"center",gap:8}}><span className="typing-dot"/><span className="typing-dot"/><span className="typing-dot"/></div>{phase>0&&<div style={{color:"#546e7a",fontSize:12,marginTop:4,animation:"fadeSlideUp 0.3s"}}>{msgs[phase]}</div>}</div></div>);
+};
 
 const TraitCard=({emoji,label,description})=>(
 <div style={{background:'rgba(6,182,212,0.06)',border:'1px solid rgba(6,182,212,0.12)',borderRadius:14,padding:'14px 16px',display:'flex',gap:12,alignItems:'flex-start'}}>
