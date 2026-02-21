@@ -635,7 +635,25 @@ const sendToGPT=useCallback(async(userMsg)=>{
 useEffect(()=>{if(!started&&userId){setStarted(true);sendToGPT(null)}},[userId,started]);
 useEffect(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight},[msgs,loading]);
 
-const handleSend=()=>{if(!input.trim()||loading)return;const t=input.trim();setInput('');sendToGPT(t)};
+const handleSend=()=>{
+  if(!input.trim()||loading)return;
+  const t=input.trim();
+  // ═══════ CHEAT CODE: instant skip to DNA screen ═══════
+  if(t==='_траектория_скип'){
+    setInput('');
+    onComplete(22,[
+      'стремится к свободе выбора',
+      'боится разочаровать родителей',
+      'мечтает создать что-то своё',
+      'скрытая амбиция — хочет большего',
+      'ищет свой путь, не чужой'
+    ],
+    'Ты пришёл сюда не просто так. За 15 минут я увидел человека, который хочет жить по-своему, но боится сделать первый шаг. Твоя мечта — создать что-то своё, и это не фантазия, а вектор. Держи его.',
+    'roadmap');
+    return;
+  }
+  setInput('');sendToGPT(t);
+};
 const handleSkip=()=>{if(loading)return;sendToGPT('[SKIP]')};
 const canEnd=dna>=19&&userMsgCount.current>=5;
 
