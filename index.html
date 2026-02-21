@@ -42,7 +42,20 @@ const HDRS={'Content-Type':'application/json','apikey':SB_KEY,'Authorization':`B
 
 async function sbPost(table,body){try{const r=await fetch(`${SB_URL}/rest/v1/${table}`,{method:'POST',headers:{...HDRS,'Prefer':'return=representation'},body:JSON.stringify(body)});if(!r.ok)return null;const d=await r.json();return d[0]||null}catch(e){return null}}
 async function sbPatch(table,id,body){try{await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`,{method:'PATCH',headers:HDRS,body:JSON.stringify(body)})}catch(e){}}
-async function sbRpc(fn,args){const r=await fetch(`${SB_URL}/rest/v1/rpc/${fn}`,{method:'POST',headers:HDRS,body:JSON.stringify(args)});if(!r.ok){const t=await r.text();throw new Error(t.substring(0,300))}return await r.json()}
+async function sbRpc(fn,args){
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),30000); // 30s timeout
+  try{
+    const r=await fetch(`${SB_URL}/rest/v1/rpc/${fn}`,{method:'POST',headers:HDRS,body:JSON.stringify(args),signal:controller.signal});
+    clearTimeout(timeout);
+    if(!r.ok){const t=await r.text();throw new Error(t.substring(0,300))}
+    return await r.json();
+  }catch(e){
+    clearTimeout(timeout);
+    if(e.name==='AbortError')throw new Error('TIMEOUT');
+    throw e;
+  }
+}
 
 // ═══════ SYSTEM PROMPT v6 ═══════
 const SYS=(un,cn,tone,msgCount,skipCount)=>`
@@ -243,7 +256,7 @@ copilot_note: твоя личная заметка о юзере для стра
 suggested_feature: какую фичу рекомендуешь этому юзеру. Варианты: "roadmap" | "parents" | "community" | "case" | "ai_clone" | "deeper". Выбирай на основе диалога.
 `;
 
-// ═══════ GPT with retry ═══════
+// ═══════ GPT with retry — patient, waits for deep thinking ═══════
 async function callGPT(messages,retry=0){
   try{
     const result=await sbRpc('chat_proxy',{messages});
@@ -252,8 +265,10 @@ async function callGPT(messages,retry=0){
     if(s.startsWith('GPT_ERROR'))throw new Error(s);
     return s;
   }catch(e){
-    if(retry<2&&(e.message.includes('cancel')||e.message.includes('timeout')||e.message.includes('empty'))){
-      await new Promise(r=>setTimeout(r,1500));
+    // Retry up to 4 times with increasing waits (2s, 4s, 6s, 8s)
+    const retryable=e.message.includes('cancel')||e.message.includes('timeout')||e.message.includes('empty')||e.message.includes('FunctionsFetchError')||e.message.includes('Failed to fetch')||e.message.includes('502')||e.message.includes('504')||e.message.includes('TIMEOUT');
+    if(retry<4&&retryable){
+      await new Promise(r=>setTimeout(r,2000+retry*2000));
       return callGPT(messages,retry+1);
     }
     throw e;
@@ -276,60 +291,76 @@ function parseResponse(raw){
   return{text,dna};
 }
 
-// ═══════ VOICE INPUT v2 — new instance each tap, mobile-friendly ═══════
+// ═══════ VOICE INPUT v3 — continuous, collects full speech ═══════
 function useVoiceInput(){
   const[recording,setRecording]=useState(false);
   const[supported,setSupported]=useState(false);
   const activeRec=useRef(null);
   const cbRef=useRef(null);
+  const fullText=useRef('');
 
   useEffect(()=>{
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
     setSupported(!!SR);
   },[]);
 
+  const stopAndSubmit=()=>{
+    if(activeRec.current){
+      try{activeRec.current.stop()}catch(e){}
+    }
+  };
+
   const toggle=(onText)=>{
     cbRef.current=onText;
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 
-    // If already recording — stop
+    // If already recording — stop and submit what we have
     if(recording&&activeRec.current){
-      try{activeRec.current.stop()}catch(e){}
-      activeRec.current=null;
-      setRecording(false);
+      stopAndSubmit();
       return;
     }
 
     if(!SR){
-      // No SpeechRecognition — fallback: just put placeholder
-      if(onText)onText('[🎤 Голос недоступен в этом браузере]');
+      if(onText)onText('[🎤 Голос недоступен — открой в Chrome]');
       return;
     }
 
-    // Create FRESH instance every time (fixes mobile re-use bugs)
     try{
       const r=new SR();
       r.lang='ru-RU';
-      r.continuous=false;
-      r.interimResults=false;
+      r.continuous=true;       // DON'T stop after first phrase
+      r.interimResults=true;   // Show partial results while speaking
       r.maxAlternatives=1;
+      fullText.current='';
 
       r.onresult=(e)=>{
-        const transcript=e.results[0]&&e.results[0][0]?e.results[0][0].transcript:'';
-        if(transcript&&cbRef.current)cbRef.current(transcript);
-        activeRec.current=null;
-        setRecording(false);
+        let interim='',final='';
+        for(let i=0;i<e.results.length;i++){
+          const t=e.results[i][0].transcript;
+          if(e.results[i].isFinal){final+=t+' '}else{interim+=t}
+        }
+        fullText.current=final.trim();
+        // Show interim text in input while speaking
+        if(cbRef.current){
+          const show=(final+interim).trim();
+          if(show)cbRef.current(show,true); // true = interim, don't send yet
+        }
       };
+
       r.onerror=(e)=>{
         console.log('Speech error:',e.error);
-        // not-allowed = permission denied, show hint
         if(e.error==='not-allowed'&&cbRef.current){
-          cbRef.current('[🎤 Разреши микрофон в настройках браузера]');
+          cbRef.current('[🎤 Разреши микрофон в настройках]',false);
         }
         activeRec.current=null;
         setRecording(false);
       };
+
       r.onend=()=>{
+        // Submit final collected text
+        if(fullText.current&&cbRef.current){
+          cbRef.current(fullText.current,false); // false = final, ok to use
+        }
         activeRec.current=null;
         setRecording(false);
       };
@@ -338,17 +369,16 @@ function useVoiceInput(){
       r.start();
       setRecording(true);
 
-      // Safety timeout — stop after 15s if still recording
+      // Safety: auto-stop after 30s
       setTimeout(()=>{
         if(activeRec.current===r){
           try{r.stop()}catch(e){}
         }
-      },15000);
+      },30000);
 
     }catch(e){
       console.log('Speech init error:',e);
       setRecording(false);
-      if(cbRef.current)cbRef.current('[🎤 Открой в Chrome для голоса]');
     }
   };
 
@@ -647,8 +677,8 @@ return(
 {/* ═══════ FIX #6: "Пошёл нафиг!" instead of 👎 ═══════ */}
 <button onClick={handleSkip} disabled={loading} style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.3)",borderRadius:10,color:"#ef4444",fontSize:9,fontWeight:800,cursor:loading?"default":"pointer",opacity:loading?0.5:1,flexShrink:0,width:44,height:40,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1.1,textAlign:"center",padding:"2px"}} title="Скип">НАФИГ</button>
 <input ref={inputRef} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleSend()} placeholder="Напиши или скажи..." disabled={loading} style={{flex:1,minWidth:0,background:"rgba(6,182,212,0.06)",border:"1px solid rgba(6,182,212,0.15)",borderRadius:12,padding:"10px 14px",color:"#e2e8f0",fontSize:15,outline:"none",opacity:loading?0.5:1}}/>
-{/* Mic — always shown, gives helpful message if unsupported */}
-<button onClick={()=>voice.toggle(t=>{if(t.startsWith('[🎤')){/* hint message, don't put in input */}else{setInput(p=>p?p+' '+t:t)}})} disabled={loading} style={{background:voice.recording?"rgba(239,68,68,0.2)":"rgba(6,182,212,0.06)",border:voice.recording?"2px solid #ef4444":"1px solid rgba(6,182,212,0.15)",borderRadius:10,color:voice.recording?"#ef4444":voice.supported?"#94a3b8":"#455a64",fontSize:18,cursor:loading?"default":"pointer",flexShrink:0,width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center",animation:voice.recording?"micPulse 1.5s infinite":"none",transition:"all 0.2s",opacity:voice.supported?1:0.5}}>🎤</button>
+{/* Mic — always shown, tap to start, tap again to stop */}
+<button onClick={()=>voice.toggle((t,isInterim)=>{if(t.startsWith('[🎤')){}else if(isInterim){setInput(t)}else{setInput(t)}})} disabled={loading} style={{background:voice.recording?"rgba(239,68,68,0.2)":"rgba(6,182,212,0.06)",border:voice.recording?"2px solid #ef4444":"1px solid rgba(6,182,212,0.15)",borderRadius:10,color:voice.recording?"#ef4444":voice.supported?"#94a3b8":"#455a64",fontSize:18,cursor:loading?"default":"pointer",flexShrink:0,width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center",animation:voice.recording?"micPulse 1.5s infinite":"none",transition:"all 0.2s",opacity:voice.supported?1:0.5}}>{voice.recording?'⏹':'🎤'}</button>
 <button onClick={handleSend} disabled={loading} style={{background:"linear-gradient(135deg,#06b6d4,#0891b2)",border:"none",borderRadius:10,color:"white",fontSize:16,cursor:loading?"default":"pointer",opacity:loading?0.5:1,flexShrink:0,width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center"}}>→</button>
 </div>
 </div>
