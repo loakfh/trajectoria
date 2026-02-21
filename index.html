@@ -291,99 +291,37 @@ function parseResponse(raw){
   return{text,dna};
 }
 
-// ═══════ VOICE INPUT v5 — no duplication, auto-restart ═══════
+// ═══════ VOICE INPUT v6 — simple & bulletproof ═══════
+// Tap 🎤 → speak → auto-stops after phrase → text in input
+// Tap again → adds more text
 function useVoiceInput(){
   const[recording,setRecording]=useState(false);
   const[supported,setSupported]=useState(false);
-  const activeRec=useRef(null);
-  const cbRef=useRef(null);
-  const wantRecording=useRef(false);
-  const prevSessionsText=useRef(''); // text from PREVIOUS restart sessions only
 
   useEffect(()=>{
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
     setSupported(!!SR);
   },[]);
 
-  const startFresh=()=>{
-    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-    if(!SR||!wantRecording.current)return;
-
-    try{
-      const r=new SR();
-      r.lang='ru-RU';
-      r.continuous=true;
-      r.interimResults=true;
-      r.maxAlternatives=1;
-
-      r.onresult=(e)=>{
-        // e.results contains ALL results for THIS session
-        // Just read them directly — no manual accumulation needed
-        let thisSessionFinal='',interim='';
-        for(let i=0;i<e.results.length;i++){
-          if(e.results[i].isFinal){
-            thisSessionFinal+=e.results[i][0].transcript+' ';
-          }else{
-            interim+=e.results[i][0].transcript;
-          }
-        }
-        // Display = previous sessions + this session's results
-        const display=(prevSessionsText.current+' '+thisSessionFinal+interim).trim();
-        if(cbRef.current)cbRef.current(display);
-        // Remember this session's finals for when session ends
-        r._finalText=thisSessionFinal.trim();
-      };
-
-      r.onerror=(e)=>{
-        if(e.error==='not-allowed'){
-          wantRecording.current=false;
-          setRecording(false);
-        }
-      };
-
-      r.onend=()=>{
-        // Save this session's final text to carry over to next restart
-        if(r._finalText){
-          prevSessionsText.current=(prevSessionsText.current+' '+r._finalText).trim();
-        }
-        if(wantRecording.current){
-          setTimeout(()=>startFresh(),100);
-        }else{
-          // Done — final text already in input from last onresult
-          activeRec.current=null;
-          setRecording(false);
-        }
-      };
-
-      r._finalText='';
-      activeRec.current=r;
-      r.start();
-    }catch(e){
-      wantRecording.current=false;
-      setRecording(false);
-    }
-  };
-
   const toggle=(onText)=>{
-    cbRef.current=onText;
-    if(wantRecording.current){
-      wantRecording.current=false;
-      if(activeRec.current){try{activeRec.current.stop()}catch(e){}}
-      return;
-    }
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
     if(!SR)return;
 
-    prevSessionsText.current=''; // clean slate
-    wantRecording.current=true;
-    setRecording(true);
-    startFresh();
-    setTimeout(()=>{
-      if(wantRecording.current){
-        wantRecording.current=false;
-        if(activeRec.current){try{activeRec.current.stop()}catch(e){}}
-      }
-    },60000);
+    if(recording)return; // already recording, wait for it
+
+    const r=new SR();
+    r.lang='ru-RU';
+    r.continuous=false;
+    r.interimResults=false;
+
+    r.onresult=(e)=>{
+      const text=e.results[0]?.[0]?.transcript||'';
+      if(text&&onText)onText(text);
+    };
+    r.onerror=()=>setRecording(false);
+    r.onend=()=>setRecording(false);
+
+    try{r.start();setRecording(true)}catch(e){setRecording(false)}
   };
 
   return{recording,supported,toggle};
@@ -709,8 +647,8 @@ return(
 {/* ═══════ FIX #6: "Пошёл нафиг!" instead of 👎 ═══════ */}
 <button onClick={handleSkip} disabled={loading} style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.3)",borderRadius:10,color:"#ef4444",fontSize:9,fontWeight:800,cursor:loading?"default":"pointer",opacity:loading?0.5:1,flexShrink:0,width:44,height:40,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1.1,textAlign:"center",padding:"2px"}} title="Скип">НАФИГ</button>
 <input ref={inputRef} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleSend()} placeholder="Напиши или скажи..." disabled={loading} style={{flex:1,minWidth:0,background:"rgba(6,182,212,0.06)",border:"1px solid rgba(6,182,212,0.15)",borderRadius:12,padding:"10px 14px",color:"#e2e8f0",fontSize:15,outline:"none",opacity:loading?0.5:1}}/>
-{/* Mic — tap to start, tap again to stop */}
-<button onClick={()=>voice.toggle(t=>{if(!t.startsWith('[🎤'))setInput(t)})} disabled={loading} style={{background:voice.recording?"rgba(239,68,68,0.2)":"rgba(6,182,212,0.06)",border:voice.recording?"2px solid #ef4444":"1px solid rgba(6,182,212,0.15)",borderRadius:10,color:voice.recording?"#ef4444":voice.supported?"#94a3b8":"#455a64",fontSize:18,cursor:loading?"default":"pointer",flexShrink:0,width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center",animation:voice.recording?"micPulse 1.5s infinite":"none",transition:"all 0.2s",opacity:voice.supported?1:0.5}}>{voice.recording?'⏹':'🎤'}</button>
+{/* Mic — tap to speak one phrase, tap again to add more */}
+<button onClick={()=>voice.toggle(t=>setInput(p=>p?p+' '+t:t))} disabled={loading||voice.recording} style={{background:voice.recording?"rgba(239,68,68,0.2)":"rgba(6,182,212,0.06)",border:voice.recording?"2px solid #ef4444":"1px solid rgba(6,182,212,0.15)",borderRadius:10,color:voice.recording?"#ef4444":voice.supported?"#94a3b8":"#455a64",fontSize:18,cursor:loading?"default":"pointer",flexShrink:0,width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center",animation:voice.recording?"micPulse 1.5s infinite":"none",transition:"all 0.2s",opacity:voice.supported?1:0.5}}>🎤</button>
 <button onClick={handleSend} disabled={loading} style={{background:"linear-gradient(135deg,#06b6d4,#0891b2)",border:"none",borderRadius:10,color:"white",fontSize:16,cursor:loading?"default":"pointer",opacity:loading?0.5:1,flexShrink:0,width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center"}}>→</button>
 </div>
 </div>
