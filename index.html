@@ -291,95 +291,113 @@ function parseResponse(raw){
   return{text,dna};
 }
 
-// ═══════ VOICE INPUT v3 — continuous, collects full speech ═══════
+// ═══════ VOICE INPUT v4 — auto-restart on silence, no duplicates ═══════
 function useVoiceInput(){
   const[recording,setRecording]=useState(false);
   const[supported,setSupported]=useState(false);
   const activeRec=useRef(null);
   const cbRef=useRef(null);
-  const fullText=useRef('');
+  const wantRecording=useRef(false); // user intent: should we be recording?
+  const collectedText=useRef('');    // all final text across restarts
 
   useEffect(()=>{
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
     setSupported(!!SR);
   },[]);
 
-  const stopAndSubmit=()=>{
-    if(activeRec.current){
-      try{activeRec.current.stop()}catch(e){}
+  const startFresh=()=>{
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SR||!wantRecording.current)return;
+
+    try{
+      const r=new SR();
+      r.lang='ru-RU';
+      r.continuous=true;
+      r.interimResults=true;
+      r.maxAlternatives=1;
+
+      r.onresult=(e)=>{
+        // Only process NEW results from THIS instance
+        let sessionFinal='',interim='';
+        for(let i=0;i<e.results.length;i++){
+          const t=e.results[i][0].transcript;
+          if(e.results[i].isFinal){sessionFinal+=t+' '}else{interim+=t}
+        }
+        // Show in input: collected so far + this session's final + interim
+        const display=(collectedText.current+sessionFinal+interim).trim();
+        if(display&&cbRef.current)cbRef.current(display);
+        // Store final parts for this session (will be committed on end)
+        r._sessionFinal=sessionFinal.trim();
+      };
+
+      r.onerror=(e)=>{
+        console.log('Speech error:',e.error);
+        if(e.error==='not-allowed'){
+          wantRecording.current=false;
+          setRecording(false);
+        }
+        // aborted/network = just let onend handle restart
+      };
+
+      r.onend=()=>{
+        // Commit this session's final text
+        if(r._sessionFinal){
+          collectedText.current=(collectedText.current+' '+r._sessionFinal).trim();
+        }
+        // If user still wants to record — restart (handles Chrome silence cutoff)
+        if(wantRecording.current){
+          setTimeout(()=>startFresh(),100);
+        }else{
+          // User stopped — put final text in input
+          if(collectedText.current&&cbRef.current){
+            cbRef.current(collectedText.current);
+          }
+          activeRec.current=null;
+          setRecording(false);
+        }
+      };
+
+      r._sessionFinal='';
+      activeRec.current=r;
+      r.start();
+    }catch(e){
+      console.log('Speech start error:',e);
+      wantRecording.current=false;
+      setRecording(false);
     }
   };
 
   const toggle=(onText)=>{
     cbRef.current=onText;
+
+    if(wantRecording.current){
+      // STOP — user tapped stop
+      wantRecording.current=false;
+      if(activeRec.current){
+        try{activeRec.current.stop()}catch(e){}
+      }
+      return;
+    }
+
+    // START
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-
-    // If already recording — stop and submit what we have
-    if(recording&&activeRec.current){
-      stopAndSubmit();
-      return;
-    }
-
     if(!SR){
-      if(onText)onText('[🎤 Голос недоступен — открой в Chrome]');
+      if(onText)onText('[🎤 Открой в Chrome для голоса]');
       return;
     }
 
-    try{
-      const r=new SR();
-      r.lang='ru-RU';
-      r.continuous=true;       // DON'T stop after first phrase
-      r.interimResults=true;   // Show partial results while speaking
-      r.maxAlternatives=1;
-      fullText.current='';
+    collectedText.current=''; // reset from previous recording
+    wantRecording.current=true;
+    setRecording(true);
+    startFresh();
 
-      r.onresult=(e)=>{
-        let interim='',final='';
-        for(let i=0;i<e.results.length;i++){
-          const t=e.results[i][0].transcript;
-          if(e.results[i].isFinal){final+=t+' '}else{interim+=t}
-        }
-        fullText.current=final.trim();
-        // Show interim text in input while speaking
-        if(cbRef.current){
-          const show=(final+interim).trim();
-          if(show)cbRef.current(show,true); // true = interim, don't send yet
-        }
-      };
-
-      r.onerror=(e)=>{
-        console.log('Speech error:',e.error);
-        if(e.error==='not-allowed'&&cbRef.current){
-          cbRef.current('[🎤 Разреши микрофон в настройках]',false);
-        }
-        activeRec.current=null;
-        setRecording(false);
-      };
-
-      r.onend=()=>{
-        // Submit final collected text
-        if(fullText.current&&cbRef.current){
-          cbRef.current(fullText.current,false); // false = final, ok to use
-        }
-        activeRec.current=null;
-        setRecording(false);
-      };
-
-      activeRec.current=r;
-      r.start();
-      setRecording(true);
-
-      // Safety: auto-stop after 30s
-      setTimeout(()=>{
-        if(activeRec.current===r){
-          try{r.stop()}catch(e){}
-        }
-      },30000);
-
-    }catch(e){
-      console.log('Speech init error:',e);
-      setRecording(false);
-    }
+    // Safety: auto-stop after 60s
+    setTimeout(()=>{
+      if(wantRecording.current){
+        wantRecording.current=false;
+        if(activeRec.current){try{activeRec.current.stop()}catch(e){}}
+      }
+    },60000);
   };
 
   return{recording,supported,toggle};
@@ -705,8 +723,8 @@ return(
 {/* ═══════ FIX #6: "Пошёл нафиг!" instead of 👎 ═══════ */}
 <button onClick={handleSkip} disabled={loading} style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.3)",borderRadius:10,color:"#ef4444",fontSize:9,fontWeight:800,cursor:loading?"default":"pointer",opacity:loading?0.5:1,flexShrink:0,width:44,height:40,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1.1,textAlign:"center",padding:"2px"}} title="Скип">НАФИГ</button>
 <input ref={inputRef} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleSend()} placeholder="Напиши или скажи..." disabled={loading} style={{flex:1,minWidth:0,background:"rgba(6,182,212,0.06)",border:"1px solid rgba(6,182,212,0.15)",borderRadius:12,padding:"10px 14px",color:"#e2e8f0",fontSize:15,outline:"none",opacity:loading?0.5:1}}/>
-{/* Mic — always shown, tap to start, tap again to stop */}
-<button onClick={()=>voice.toggle((t,isInterim)=>{if(t.startsWith('[🎤')){}else if(isInterim){setInput(t)}else{setInput(t)}})} disabled={loading} style={{background:voice.recording?"rgba(239,68,68,0.2)":"rgba(6,182,212,0.06)",border:voice.recording?"2px solid #ef4444":"1px solid rgba(6,182,212,0.15)",borderRadius:10,color:voice.recording?"#ef4444":voice.supported?"#94a3b8":"#455a64",fontSize:18,cursor:loading?"default":"pointer",flexShrink:0,width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center",animation:voice.recording?"micPulse 1.5s infinite":"none",transition:"all 0.2s",opacity:voice.supported?1:0.5}}>{voice.recording?'⏹':'🎤'}</button>
+{/* Mic — tap to start, tap again to stop */}
+<button onClick={()=>voice.toggle(t=>{if(!t.startsWith('[🎤'))setInput(t)})} disabled={loading} style={{background:voice.recording?"rgba(239,68,68,0.2)":"rgba(6,182,212,0.06)",border:voice.recording?"2px solid #ef4444":"1px solid rgba(6,182,212,0.15)",borderRadius:10,color:voice.recording?"#ef4444":voice.supported?"#94a3b8":"#455a64",fontSize:18,cursor:loading?"default":"pointer",flexShrink:0,width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center",animation:voice.recording?"micPulse 1.5s infinite":"none",transition:"all 0.2s",opacity:voice.supported?1:0.5}}>{voice.recording?'⏹':'🎤'}</button>
 <button onClick={handleSend} disabled={loading} style={{background:"linear-gradient(135deg,#06b6d4,#0891b2)",border:"none",borderRadius:10,color:"white",fontSize:16,cursor:loading?"default":"pointer",opacity:loading?0.5:1,flexShrink:0,width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center"}}>→</button>
 </div>
 </div>
