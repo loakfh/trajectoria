@@ -291,14 +291,14 @@ function parseResponse(raw){
   return{text,dna};
 }
 
-// ═══════ VOICE INPUT v4 — auto-restart on silence, no duplicates ═══════
+// ═══════ VOICE INPUT v5 — no duplication, auto-restart ═══════
 function useVoiceInput(){
   const[recording,setRecording]=useState(false);
   const[supported,setSupported]=useState(false);
   const activeRec=useRef(null);
   const cbRef=useRef(null);
-  const wantRecording=useRef(false); // user intent: should we be recording?
-  const collectedText=useRef('');    // all final text across restarts
+  const wantRecording=useRef(false);
+  const prevSessionsText=useRef(''); // text from PREVIOUS restart sessions only
 
   useEffect(()=>{
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -317,51 +317,48 @@ function useVoiceInput(){
       r.maxAlternatives=1;
 
       r.onresult=(e)=>{
-        // Only process NEW results from THIS instance
-        let sessionFinal='',interim='';
+        // e.results contains ALL results for THIS session
+        // Just read them directly — no manual accumulation needed
+        let thisSessionFinal='',interim='';
         for(let i=0;i<e.results.length;i++){
-          const t=e.results[i][0].transcript;
-          if(e.results[i].isFinal){sessionFinal+=t+' '}else{interim+=t}
+          if(e.results[i].isFinal){
+            thisSessionFinal+=e.results[i][0].transcript+' ';
+          }else{
+            interim+=e.results[i][0].transcript;
+          }
         }
-        // Show in input: collected so far + this session's final + interim
-        const display=(collectedText.current+sessionFinal+interim).trim();
-        if(display&&cbRef.current)cbRef.current(display);
-        // Store final parts for this session (will be committed on end)
-        r._sessionFinal=sessionFinal.trim();
+        // Display = previous sessions + this session's results
+        const display=(prevSessionsText.current+' '+thisSessionFinal+interim).trim();
+        if(cbRef.current)cbRef.current(display);
+        // Remember this session's finals for when session ends
+        r._finalText=thisSessionFinal.trim();
       };
 
       r.onerror=(e)=>{
-        console.log('Speech error:',e.error);
         if(e.error==='not-allowed'){
           wantRecording.current=false;
           setRecording(false);
         }
-        // aborted/network = just let onend handle restart
       };
 
       r.onend=()=>{
-        // Commit this session's final text
-        if(r._sessionFinal){
-          collectedText.current=(collectedText.current+' '+r._sessionFinal).trim();
+        // Save this session's final text to carry over to next restart
+        if(r._finalText){
+          prevSessionsText.current=(prevSessionsText.current+' '+r._finalText).trim();
         }
-        // If user still wants to record — restart (handles Chrome silence cutoff)
         if(wantRecording.current){
           setTimeout(()=>startFresh(),100);
         }else{
-          // User stopped — put final text in input
-          if(collectedText.current&&cbRef.current){
-            cbRef.current(collectedText.current);
-          }
+          // Done — final text already in input from last onresult
           activeRec.current=null;
           setRecording(false);
         }
       };
 
-      r._sessionFinal='';
+      r._finalText='';
       activeRec.current=r;
       r.start();
     }catch(e){
-      console.log('Speech start error:',e);
       wantRecording.current=false;
       setRecording(false);
     }
@@ -369,29 +366,18 @@ function useVoiceInput(){
 
   const toggle=(onText)=>{
     cbRef.current=onText;
-
     if(wantRecording.current){
-      // STOP — user tapped stop
       wantRecording.current=false;
-      if(activeRec.current){
-        try{activeRec.current.stop()}catch(e){}
-      }
+      if(activeRec.current){try{activeRec.current.stop()}catch(e){}}
       return;
     }
-
-    // START
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-    if(!SR){
-      if(onText)onText('[🎤 Открой в Chrome для голоса]');
-      return;
-    }
+    if(!SR)return;
 
-    collectedText.current=''; // reset from previous recording
+    prevSessionsText.current=''; // clean slate
     wantRecording.current=true;
     setRecording(true);
     startFresh();
-
-    // Safety: auto-stop after 60s
     setTimeout(()=>{
       if(wantRecording.current){
         wantRecording.current=false;
