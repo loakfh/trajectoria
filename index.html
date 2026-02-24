@@ -40,8 +40,8 @@ const SB_URL='https://icrqtyuiuoescihjvnma.supabase.co';
 const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImljcnF0eXVpdW9lc2NpaGp2bm1hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEyNjkwNTYsImV4cCI6MjA4Njg0NTA1Nn0.QNPJriOjokaFNAc8-2oJ7sq0jlHLGcV1R3OHWty8Kjs';
 const HDRS={'Content-Type':'application/json','apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`};
 
-async function sbPost(table,body){try{const r=await fetch(`${SB_URL}/rest/v1/${table}`,{method:'POST',headers:{...HDRS,'Prefer':'return=representation'},body:JSON.stringify(body)});if(!r.ok)return null;const d=await r.json();return d[0]||null}catch(e){return null}}
-async function sbPatch(table,id,body){try{await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`,{method:'PATCH',headers:HDRS,body:JSON.stringify(body)})}catch(e){}}
+async function sbPost(table,body){try{const r=await fetch(`${SB_URL}/rest/v1/${table}`,{method:'POST',headers:{...HDRS,'Prefer':'return=representation'},body:JSON.stringify(body)});if(!r.ok){const t=await r.text();console.error(`❌ sbPost ${table}:`,r.status,t);return null}const d=await r.json();return d[0]||null}catch(e){console.error(`❌ sbPost ${table} exception:`,e.message);return null}}
+async function sbPatch(table,id,body){try{const r=await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`,{method:'PATCH',headers:HDRS,body:JSON.stringify(body)});if(!r.ok){const t=await r.text();console.error(`❌ sbPatch ${table}:`,r.status,t)}}catch(e){console.error(`❌ sbPatch ${table} exception:`,e.message)}}
 async function sbRpc(fn,args){
   const controller=new AbortController();
   const timeout=setTimeout(()=>controller.abort(),30000); // 30s timeout
@@ -577,7 +577,11 @@ const sendToGPT=useCallback(async(userMsg)=>{
     setMsgs(p=>[...p,{role:'bot',text}]);
     sbPost('messages',{user_id:userId,session_id:sessionId,role:'copilot',content:text,dna_percentage:nd,phase:np});
   }catch(e){
-    const errMsg=e.message.includes('cancel')?'⏳ Сервер думает... Попробуй ещё раз через пару секунд →':`⚠️ ${e.message.substring(0,150)}`;
+    console.error('❌ GPT error:',e.message);
+    let errMsg;
+    if(e.message.includes('TIMEOUT'))errMsg='⏳ AI думает дольше обычного. Нажми → чтобы повторить.';
+    else if(e.message.includes('cancel')||e.message.includes('Failed to fetch'))errMsg='⏳ Соединение прервалось. Нажми → чтобы повторить.';
+    else errMsg=`⚠️ Ошибка: ${e.message.substring(0,200)}`;
     setMsgs(p=>[...p,{role:'bot',text:errMsg}]);
   }
   setLoading(false);

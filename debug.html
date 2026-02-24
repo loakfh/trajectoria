@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Траектория — Диагностика</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0f0f19;color:#e2e8f0;font-family:monospace;padding:16px;font-size:13px}
+h1{color:#06b6d4;margin-bottom:16px;font-size:18px}
+h2{color:#22d3ee;margin:20px 0 8px;font-size:15px}
+.ok{color:#22c55e}.err{color:#ef4444}.warn{color:#fbbf24}
+pre{background:#1a1a2e;padding:12px;border-radius:8px;overflow-x:auto;margin:4px 0 12px;white-space:pre-wrap;word-break:break-all;font-size:12px;border:1px solid rgba(255,255,255,0.06)}
+button{background:#06b6d4;color:white;border:none;padding:10px 24px;border-radius:8px;font-size:14px;cursor:pointer;font-weight:700;margin-bottom:16px}
+table{width:100%;border-collapse:collapse;margin:8px 0}
+td,th{border:1px solid rgba(255,255,255,0.1);padding:6px 8px;text-align:left;font-size:11px}
+th{background:rgba(6,182,212,0.1);color:#06b6d4}
+.count{font-size:24px;font-weight:900;color:#22d3ee}
+.card{background:#1a1a2e;border:1px solid rgba(6,182,212,0.15);border-radius:12px;padding:14px;margin:8px 0}
+</style>
+</head>
+<body>
+<h1>🔍 Траектория — Диагностика БД</h1>
+<button onclick="runAll()">▶ Запустить проверку</button>
+<div id="out"></div>
+
+<script>
+const SB='https://icrqtyuiuoescihjvnma.supabase.co';
+const KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImljcnF0eXVpdW9lc2NpaGp2bm1hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEyNjkwNTYsImV4cCI6MjA4Njg0NTA1Nn0.QNPJriOjokaFNAc8-2oJ7sq0jlHLGcV1R3OHWty8Kjs';
+const H={'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json'};
+
+async function q(table,params=''){
+  const r=await fetch(`${SB}/rest/v1/${table}?${params}`,{headers:H});
+  if(!r.ok){const t=await r.text();return{error:r.status+': '+t}}
+  return await r.json();
+}
+
+async function testInsert(table,body){
+  try{
+    const r=await fetch(`${SB}/rest/v1/${table}`,{method:'POST',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(body)});
+    if(!r.ok){const t=await r.text();return{error:r.status+': '+t}}
+    return await r.json();
+  }catch(e){return{error:e.message}}
+}
+
+async function testRpc(){
+  try{
+    const r=await fetch(`${SB}/rest/v1/rpc/chat_proxy`,{method:'POST',headers:H,body:JSON.stringify({messages:[{role:'user',content:'скажи "тест ок" одним словом'}]})});
+    if(!r.ok){const t=await r.text();return{error:r.status+': '+t}}
+    return await r.json();
+  }catch(e){return{error:e.message}}
+}
+
+function html(s){document.getElementById('out').innerHTML+=s}
+
+function tableHtml(data,maxRows=10){
+  if(!data||!data.length)return'<p class="warn">Пусто</p>';
+  const keys=Object.keys(data[0]);
+  let h='<table><tr>'+keys.map(k=>'<th>'+k+'</th>').join('')+'</tr>';
+  data.slice(0,maxRows).forEach(row=>{
+    h+='<tr>'+keys.map(k=>'<td>'+(row[k]===null?'—':typeof row[k]==='object'?JSON.stringify(row[k]):String(row[k]).substring(0,100))+'</td>').join('')+'</tr>';
+  });
+  return h+'</table>';
+}
+
+async function runAll(){
+  document.getElementById('out').innerHTML='<p>⏳ Проверяю...</p>';
+  let out='';
+
+  // 1. USERS
+  out+='<h2>👤 users</h2>';
+  const users=await q('users','select=id,name,copilot_name,contact,created_at&order=created_at.desc&limit=10');
+  if(users.error){
+    out+='<p class="err">❌ Ошибка: '+users.error+'</p>';
+  }else{
+    out+='<p class="ok">✅ Таблица работает. Записей: <span class="count">'+users.length+'</span></p>';
+    out+=tableHtml(users);
+  }
+
+  // 2. SESSIONS
+  out+='<h2>📊 sessions</h2>';
+  const sessions=await q('sessions','select=id,user_id,dna_percentage,dialogue_phase,emotional_state,ended_at,created_at&order=created_at.desc&limit=10');
+  if(sessions.error){
+    out+='<p class="err">❌ Ошибка: '+sessions.error+'</p>';
+  }else{
+    out+='<p class="ok">✅ Таблица работает. Записей: <span class="count">'+sessions.length+'</span></p>';
+    out+=tableHtml(sessions);
+  }
+
+  // 3. MESSAGES
+  out+='<h2>💬 messages</h2>';
+  const msgs=await q('messages','select=id,session_id,role,content,dna_percentage,phase,created_at&order=created_at.desc&limit=10');
+  if(msgs.error){
+    out+='<p class="err">❌ Ошибка: '+msgs.error+'</p>';
+  }else{
+    out+='<p class="ok">✅ Таблица работает. Записей: <span class="count">'+msgs.length+'</span></p>';
+    out+=tableHtml(msgs);
+  }
+
+  // 4. FAKEDOOR_CLICKS
+  out+='<h2>🚪 fakedoor_clicks</h2>';
+  const fd=await q('fakedoor_clicks','select=id,user_id,feature,metadata,created_at&order=created_at.desc&limit=10');
+  if(fd.error){
+    out+='<p class="err">❌ Ошибка: '+fd.error+'</p>';
+  }else{
+    out+='<p class="ok">✅ Таблица работает. Записей: <span class="count">'+fd.length+'</span></p>';
+    out+=tableHtml(fd);
+  }
+
+  // 5. CHAT_PROXY (Edge Function)
+  out+='<h2>🤖 chat_proxy (GPT)</h2>';
+  out+='<p>Тестирую Edge Function...</p>';
+  const gpt=await testRpc();
+  if(gpt.error){
+    out+='<p class="err">❌ Ошибка: '+gpt.error+'</p>';
+  }else{
+    out+='<p class="ok">✅ Edge Function работает</p>';
+    out+='<pre>'+JSON.stringify(gpt,null,2).substring(0,500)+'</pre>';
+  }
+
+  // 6. WRITE TEST
+  out+='<h2>✏️ Тест записи</h2>';
+  const testUser=await testInsert('users',{name:'_debug_test',copilot_name:'_test'});
+  if(testUser.error){
+    out+='<p class="err">❌ Не могу записать в users: '+testUser.error+'</p>';
+  }else{
+    out+='<p class="ok">✅ Запись работает (создан тестовый юзер, id: '+(testUser[0]?.id||'?')+')</p>';
+  }
+
+  // SUMMARY
+  out+='<h2>📋 Итого</h2>';
+  const tables=[
+    {n:'users',d:users},
+    {n:'sessions',d:sessions},
+    {n:'messages',d:msgs},
+    {n:'fakedoor_clicks',d:fd}
+  ];
+  out+='<div class="card">';
+  tables.forEach(t=>{
+    const ok=!t.d.error;
+    const cnt=ok?t.d.length:'—';
+    out+='<p>'+(ok?'✅':'❌')+' <b>'+t.n+'</b>: '+(ok?cnt+' записей':t.d.error)+'</p>';
+  });
+  out+='<p>'+(gpt.error?'❌':'✅')+' <b>chat_proxy</b>: '+(gpt.error?gpt.error:'работает')+'</p>';
+  out+='</div>';
+
+  document.getElementById('out').innerHTML=out;
+}
+</script>
+</body>
+</html>
