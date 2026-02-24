@@ -79,7 +79,7 @@ async function runAll(){
 
   // 2. SESSIONS
   out+='<h2>📊 sessions</h2>';
-  const sessions=await q('sessions','select=id,user_id,dna_percentage,dialogue_phase,emotional_state,ended_at,created_at&order=created_at.desc&limit=10');
+  const sessions=await q('sessions','select=id,user_id,dna_percentage,dialogue_phase,emotional_state,ended_at&order=id.desc&limit=10');
   if(sessions.error){
     out+='<p class="err">❌ Ошибка: '+sessions.error+'</p>';
   }else{
@@ -99,7 +99,7 @@ async function runAll(){
 
   // 4. FAKEDOOR_CLICKS
   out+='<h2>🚪 fakedoor_clicks</h2>';
-  const fd=await q('fakedoor_clicks','select=id,user_id,feature,metadata,created_at&order=created_at.desc&limit=10');
+  const fd=await q('fakedoor_clicks','select=id,user_id,feature&order=id.desc&limit=10');
   if(fd.error){
     out+='<p class="err">❌ Ошибка: '+fd.error+'</p>';
   }else{

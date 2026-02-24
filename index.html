@@ -664,7 +664,7 @@ const Summary=({userName,copilotName,dna,traits,copilotNote,suggestedFeature,use
 const[modal,setModal]=useState(false);const[regIn,setRegIn]=useState('');const[regDone,setRegDone]=useState(false);const[fdEmail,setFdEmail]=useState({});
 const saveReg=async()=>{if(!regIn.trim())return;await sbPatch('users',userId,{contact:regIn.trim()});setRegDone(true)};
 const clickFD=async(f)=>{await sbPost('fakedoor_clicks',{user_id:userId,feature:f});setModal(f)};
-const saveFdEmail=async(f)=>{const em=fdEmail[f];if(!em||!em.trim())return;await sbPost('fakedoor_clicks',{user_id:userId,feature:f+'_email',metadata:em.trim()});setModal(false)};
+const saveFdEmail=async(f)=>{const em=fdEmail[f];if(!em||!em.trim())return;await sbPost('fakedoor_clicks',{user_id:userId,feature:f+'_email_'+em.trim()});setModal(false)};
 
 const defaultTraits=[
   {emoji:'🔥',label:'Стремление к свободе',desc:'Ты ценишь возможность выбирать свой путь'},
